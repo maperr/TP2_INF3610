@@ -1,0 +1,38 @@
+
+**** Build of configuration Debug for project sendpacket ****
+
+make all 
+Building file: ../src/sendpacket.c
+Invoking: ARM Linux gcc compiler
+arm-xilinx-linux-gnueabi-gcc -Wall -O0 -g3 -c -fmessage-length=0 -MMD -MP -MF"src/sendpacket.d" -MT"src/sendpacket.d" -o"src/sendpacket.o" "../src/sendpacket.c"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\sendpacket\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/sendpacket/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+Finished building: ../src/sendpacket.c
+ 
+Building target: sendpacket.elf
+Invoking: ARM Linux gcc linker
+arm-xilinx-linux-gnueabi-gcc  -o"sendpacket.elf"  ./src/sendpacket.o   
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\sendpacket\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/sendpacket/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+Finished building target: sendpacket.elf
+ 
+Invoking: ARM Linux Print Size
+arm-xilinx-linux-gnueabi-size sendpacket.elf  |tee "sendpacket.elf.size"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\sendpacket\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/sendpacket/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+   text	   data	    bss	    dec	    hex	filename
+   3128	    332	      8	   3468	    d8c	sendpacket.elf
+Finished building: sendpacket.elf.size
+ 

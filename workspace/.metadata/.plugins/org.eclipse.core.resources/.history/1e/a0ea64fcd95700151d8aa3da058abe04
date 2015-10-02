@@ -1,0 +1,301 @@
+#include "bsp_init.h"
+
+
+
+int initialize_bsp() {
+	int status;
+
+	disable_cache_for_section();
+	initialize_fpga_core();
+	initialize_timer();
+
+	status = prepare_irq();
+	if (status != XST_SUCCESS) {
+		return XST_FAILURE;
+	}
+
+	return XST_SUCCESS;
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//							Cache Section
+///////////////////////////////////////////////////////////////////////////
+void disable_cache_for_section() {
+	// Disable L1 cache for OCM
+	MyXil_SetTlbAttributes(0xFFFF0000,0x04de2);	
+}
+
+/**
+ * Modified SetTlbAttributes to call MyXil_DCacheFlush in order
+ * to prevelt L2 Cache controller accesses
+ */
+void MyXil_SetTlbAttributes(u32 addr, u32 attrib) {
+	u32 *ptr;
+	u32 section;
+
+	mtcp(XREG_CP15_INVAL_UTLB_UNLOCKED, 0);
+	dsb();
+
+	mtcp(XREG_CP15_INVAL_BRANCH_ARRAY, 0);
+	dsb();
+	MyXil_DCacheFlush();
+
+	section = addr / 0x100000;
+	ptr = &MMUTable + section;
+	*ptr = (addr & 0xFFF00000) | attrib;
+	dsb();
+}
+/**
+ * Modified DCacheFlush to prevent L2 Cache controller access
+ */
+void MyXil_DCacheFlush(void) {
+	Xil_L1DCacheFlush();
+	//Xil_L2CacheFlush();
+}
+///////////////////////////////////////////////////////////////////////////
+//						End of Cache Section
+///////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////
+//						     HW Setup
+///////////////////////////////////////////////////////////////////////////
+void initialize_fpga_core() {
+	// Initialize driver instance for PL IRQ
+	m_fpga_core.Config.DeviceId = (u16)XPAR_IRQ_GEN_0_BASEADDR;
+    m_fpga_core.Config.BaseAddress = IRQ_PCORE_GEN_BASE;
+    m_fpga_core.IsReady = XIL_COMPONENT_IS_READY;
+    m_fpga_core.IsStarted = 0;
+}
+
+void initialize_timer() {
+    unsigned long load_value = (TIMER_CLOCK_FREQUENCY/TIMER_TICK_FREQUENCY) - 1;
+	
+	// Reset the timers, and clear interrupts, and init timer in auto reload mode
+    private_timer_init(AUTO_RELOAD_TIMER);
+	
+	// Set the number of cycles each timer counts before generating an interrupt and start the timer
+    private_timer_request(load_value);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//					      End of HW Setup
+///////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////
+//						 Interrupt Section
+///////////////////////////////////////////////////////////////////////////
+
+int prepare_irq() {
+	int status;
+	
+	status = initialize_interrupt_controller();
+	if (status != XST_SUCCESS) {
+		xil_printf("Error %d while initializing the interrupt controller\n", status);
+		return XST_FAILURE;
+	}
+
+	enable_interrupt_controller();
+
+	status = connect_irqs_to_gic();
+	if (status != XST_SUCCESS) {
+		xil_printf("Error %d while connecting the irqs\n", status);
+		return XST_FAILURE;
+	}
+
+	return XST_SUCCESS;
+}
+
+int initialize_interrupt_controller() {
+	int status;
+	XScuGic_Config* gic_config;
+
+	/*
+	 * Initialize the interrupt controller driver so that it is ready to
+	 * use.
+	 */
+	gic_config = XScuGic_LookupConfig(INTC_DEVICE_ID);
+	if (gic_config == NULL)
+		return XST_FAILURE;
+
+
+
+	status = XScuGic_CfgInitialize(&m_gic, gic_config, gic_config->CpuBaseAddress);
+	if (status != XST_SUCCESS)
+		return XST_FAILURE;
+	
+	return XST_SUCCESS;
+}
+
+void enable_interrupt_controller() {
+	/*
+	 * Initialize the  exception table
+	 */
+	Xil_ExceptionInit();
+	
+	/*
+	 * Register the interrupt controller handler with the exception table
+	 */
+	Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT, (Xil_ExceptionHandler)XScuGic_InterruptHandler, &m_gic);
+	
+	/*
+	 * Enable non-critical exceptions
+	 */
+	Xil_ExceptionEnable();
+}
+
+int connect_irqs() {
+	int status;
+	
+	/*IRQ coming from FPGA*/
+	status = connect_fpga_core_irq();
+		if (status != XST_SUCCESS)
+		return XST_FAILURE;
+	
+	/*Timer IRQ */
+	status = connect_timer_irq();
+	if (status != XST_SUCCESS)
+		return XST_FAILURE;
+
+	/*status = connect_axi_timer_irq();
+	if (status != XST_SUCCESS)
+		return XST_FAILURE;
+	*/
+	return XST_SUCCESS;
+}
+
+int connect_fpga_core_irq() {
+	int status;
+	
+	/*
+	 * Connect the interrupt handler that will be called when an
+	 * interrupt occurs for the device.
+	 */
+	status = XScuGic_Connect(&m_gic, PL_IRQ_ID, (Xil_ExceptionHandler)fpga_core_isr, &m_fpga_core);
+	if (status != XST_SUCCESS)
+		return status;
+		
+	/*
+	 * Enable the interrupt for the PL device.
+	 */
+	XScuGic_Enable(&m_gic, PL_IRQ_ID);
+	
+	return XST_SUCCESS;
+}
+
+int connect_timer_irq() {
+	int status;
+	
+	/*
+	 * Connect the interrupt handler that will be called when an
+	 * interrupt occurs for the device.
+	 */
+	status = XScuGic_Connect(&m_gic, TIMER_INTERRUPT, (Xil_ExceptionHandler)timer_isr, NULL);
+	if (status != XST_SUCCESS)
+		return status;
+		
+		
+	/*
+	 * Enable the interrupt 
+	 */
+	XScuGic_Enable(&m_gic, TIMER_INTERRUPT);
+	
+	return XST_SUCCESS;
+}
+
+
+int connect_axi_timer_irq() {
+	int status;
+	/*
+	* Connect a device driver handler that will be called when an
+	* interrupt for the device occurs, the device driver handler performs
+	* the specific interrupt processing for the device
+	*/
+	status = XScuGic_Connect(&m_gic,
+			XPAR_FABRIC_AXI_TIMER_0_INTERRUPT_INTR,
+			(Xil_ExceptionHandler)axi_timer_isr,
+			(void *)&m_gic);
+
+	if (status != XST_SUCCESS) {
+		return XST_FAILURE;
+	}
+	u8 prio, trigger ;
+	XScuGic_GetPriorityTriggerType(&m_gic,XPAR_FABRIC_AXI_TIMER_0_INTERRUPT_INTR,&prio,&trigger);
+	xil_printf("prio et trig b = %d, %d\n", prio, trigger);
+	XScuGic_SetPriorityTriggerType(&m_gic,XPAR_FABRIC_AXI_TIMER_0_INTERRUPT_INTR,10,0b01);
+	XScuGic_GetPriorityTriggerType(&m_gic,XPAR_FABRIC_AXI_TIMER_0_INTERRUPT_INTR,&prio,&trigger);
+	xil_printf("prio et trig a = %d, %d\n", prio, trigger);
+	XScuGic_Enable(&m_gic, XPAR_FABRIC_AXI_TIMER_0_INTERRUPT_INTR);
+	return XST_SUCCESS;
+}
+
+
+
+void cleanup() {
+	/*
+	 * Disconnect and disable the interrupt
+	 */
+	disconnect_fpga_irq();
+	disconnect_timer_irq();
+}
+
+void disconnect_timer_irq() {
+	XScuGic_Disable(&m_gic, TIMER_INTERRUPT);
+	XScuGic_Disconnect(&m_gic, TIMER_INTERRUPT);
+}
+
+void disconnect_fpga_irq() {
+	/*
+	 * Disconnect and disable the interrupt
+	 */
+	XScuGic_Disable(&m_gic, PL_INTC_IRQ_ID);
+	XScuGic_Disconnect(&m_gic, PL_INTC_IRQ_ID);
+}
+
+void disconnect_fit_timer_irq() {
+	/*
+	 * Disconnect and disable the interrupt
+	 */
+	XIntc_Disable(&m_axi_intc, XPAR_AXI_INTC_0_FIT_TIMER_0_INTERRUPT_INTR);
+	XIntc_Disconnect(&m_axi_intc, XPAR_AXI_INTC_0_FIT_TIMER_0_INTERRUPT_INTR);
+
+}
+
+void disconnect_irq_gen_irq() {
+	XIntc_Disable(&m_axi_intc, XPAR_AXI_INTC_0_IRQ_GEN_0_IRQ_INTR);
+	XIntc_Disconnect(&m_axi_intc, XPAR_AXI_INTC_0_IRQ_GEN_0_IRQ_INTR);
+
+}
+
+///////////////////////////////////////////////////////////////////////////
+//						End of Interrupt Section
+///////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////
+//						  Print Redefinitions
+///////////////////////////////////////////////////////////////////////////
+/*
+ * Function to send data to OCM which is consumed by Linux Application
+ */
+void myPutchar(char c) {
+	while(COMM_TX_FLAG);	//wait for cpu0 to consume previous value
+	COMM_TX_DATA = (volatile unsigned long)c;
+	dmb();
+	COMM_TX_FLAG = 1;
+}
+
+/*
+ * Since there is no STDIO assigned to the BSP, outbyte() is not created
+ * by libgen. So add outbyte() call to myPutchar() to enable STDOUT functionality
+ * for print() and xil_printf()
+ */void outbyte(char c) {
+	myPutchar(c);
+}
+///////////////////////////////////////////////////////////////////////////
+//					  End of Print redefinitions
+///////////////////////////////////////////////////////////////////////////
+
+
+
+

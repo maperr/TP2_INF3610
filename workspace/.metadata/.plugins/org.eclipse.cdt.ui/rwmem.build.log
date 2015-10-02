@@ -1,0 +1,41 @@
+
+**** Build of configuration Debug for project rwmem ****
+
+make all 
+Building file: ../src/rwmem.c
+Invoking: ARM Linux gcc compiler
+arm-xilinx-linux-gnueabi-gcc -Wall -O0 -g3 -c -fmessage-length=0 -MMD -MP -MF"src/rwmem.d" -MT"src/rwmem.d" -o"src/rwmem.o" "../src/rwmem.c"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\rwmem\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/rwmem/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+../src/rwmem.c: In function 'main':
+../src/rwmem.c:88:17: warning: format '%lx' expects argument of type 'long unsigned int', but argument 4 has type 'uint64_t' [-Wformat]
+../src/rwmem.c:98:13: warning: format '%lx' expects argument of type 'long unsigned int', but argument 3 has type 'uint32_t' [-Wformat]
+Finished building: ../src/rwmem.c
+ 
+Building target: rwmem.elf
+Invoking: ARM Linux gcc linker
+arm-xilinx-linux-gnueabi-gcc  -o"rwmem.elf"  ./src/rwmem.o   
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\rwmem\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/rwmem/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+Finished building target: rwmem.elf
+ 
+Invoking: ARM Linux Print Size
+arm-xilinx-linux-gnueabi-size rwmem.elf  |tee "rwmem.elf.size"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\rwmem\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/rwmem/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+   text	   data	    bss	    dec	    hex	filename
+   2987	    336	     16	   3339	    d0b	rwmem.elf
+Finished building: rwmem.elf.size
+ 

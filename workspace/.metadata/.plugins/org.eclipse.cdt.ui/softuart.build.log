@@ -1,0 +1,38 @@
+
+**** Build of configuration Debug for project softuart ****
+
+make all 
+Building file: ../softuart.c
+Invoking: ARM Linux gcc compiler
+arm-xilinx-linux-gnueabi-gcc -Wall -O0 -g3 -c -fmessage-length=0 -MMD -MP -MF"softuart.d" -MT"softuart.d" -o"softuart.o" "../softuart.c"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\softuart\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/softuart/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+Finished building: ../softuart.c
+ 
+Building target: softuart.elf
+Invoking: ARM Linux gcc linker
+arm-xilinx-linux-gnueabi-gcc  -o"softuart.elf"  ./softuart.o   
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\softuart\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/softuart/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+Finished building target: softuart.elf
+ 
+Invoking: ARM Linux Print Size
+arm-xilinx-linux-gnueabi-size softuart.elf  |tee "softuart.elf.size"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\softuart\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/softuart/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+   text	   data	    bss	    dec	    hex	filename
+   2021	    312	      8	   2341	    925	softuart.elf
+Finished building: softuart.elf.size
+ 

@@ -1,0 +1,69 @@
+
+**** Build of configuration Debug for project app_cpu1 ****
+
+make all 
+Building file: ../src/cpu1_uc.c
+Invoking: ARM gcc compiler
+arm-xilinx-eabi-gcc -Wall -O0 -g3 -c -fmessage-length=0 -I../../app_cpu1_bsp/ps7_cortexa9_1/include -MMD -MP -MF"src/cpu1_uc.d" -MT"src/cpu1_uc.d" -o"src/cpu1_uc.o" "../src/cpu1_uc.c"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\app_cpu1\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/app_cpu1/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+../src/cpu1_uc.c: In function 'TaskVerification':
+../src/cpu1_uc.c:184:10: warning: unused variable 'packet' [-Wunused-variable]
+../src/cpu1_uc.c:183:8: warning: unused variable 'err' [-Wunused-variable]
+../src/cpu1_uc.c: In function 'TaskStop':
+../src/cpu1_uc.c:196:8: warning: unused variable 'err' [-Wunused-variable]
+../src/cpu1_uc.c: In function 'TaskComputing':
+../src/cpu1_uc.c:212:13: warning: unused variable 'packet' [-Wunused-variable]
+../src/cpu1_uc.c:211:11: warning: unused variable 'err' [-Wunused-variable]
+../src/cpu1_uc.c: In function 'TaskForwarding':
+../src/cpu1_uc.c:227:13: warning: unused variable 'packet' [-Wunused-variable]
+../src/cpu1_uc.c:226:11: warning: unused variable 'err' [-Wunused-variable]
+../src/cpu1_uc.c: In function 'TaskStats':
+../src/cpu1_uc.c:242:11: warning: unused variable 'err' [-Wunused-variable]
+../src/cpu1_uc.c: In function 'TaskPrint':
+../src/cpu1_uc.c:261:15: warning: unused variable 'mb' [-Wunused-variable]
+../src/cpu1_uc.c:260:9: warning: unused variable 'intID' [-Wunused-variable]
+../src/cpu1_uc.c:259:13: warning: unused variable 'packet' [-Wunused-variable]
+../src/cpu1_uc.c:258:11: warning: unused variable 'err' [-Wunused-variable]
+Finished building: ../src/cpu1_uc.c
+ 
+Building target: app_cpu1.elf
+Invoking: ARM gcc linker
+arm-xilinx-eabi-gcc -Wl,-T -Wl,../src/lscript.ld -L../../app_cpu1_bsp/ps7_cortexa9_1/lib -o"app_cpu1.elf"  ./src/bsp_init.o ./src/cpu1_uc.o   -Wl,--start-group,-lxil,-lgcc,-lc,--end-group
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\app_cpu1\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/app_cpu1/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+Finished building target: app_cpu1.elf
+ 
+make --no-print-directory post-build
+C:\Users\gabil\Desktop\Lab2Embqarque\workspace\app_cpu1\Debug/../deploy2SD.bat Debug
+Copying files
+        1 fichier(s) copi‚(s).
+        1 fichier(s) copi‚(s).
+        1 fichier(s) copi‚(s).
+        1 fichier(s) copi‚(s).
+        1 fichier(s) copi‚(s).
+        1 fichier(s) copi‚(s).
+Generating boot.bin...
+        1 fichier(s) copi‚(s).
+SDCARD directory updated
+ 
+Invoking: ARM Print Size
+arm-xilinx-eabi-size app_cpu1.elf  |tee "app_cpu1.elf.size"
+cygwin warning:
+  MS-DOS style path detected: C:\Users\gabil\Desktop\Lab2Embqarque\workspace\app_cpu1\Debug
+  Preferred POSIX equivalent is: /cygdrive/c/Users/gabil/Desktop/Lab2Embqarque/workspace/app_cpu1/Debug
+  CYGWIN environment variable option "nodosfilewarning" turns off this warning.
+  Consult the user's guide for more details about POSIX paths:
+    http://cygwin.com/cygwin-ug-net/using.html#using-pathnames
+   text	   data	    bss	    dec	    hex	filename
+  74108	   1936	6595332	6671376	 65cc10	app_cpu1.elf
+Finished building: app_cpu1.elf.size
+ 

@@ -1,0 +1,117 @@
+#include "xparameters.h"
+#include <stdio.h>
+#include "xil_io.h"
+#include "xil_mmu.h"
+#include "xil_cache.h"
+#include "xil_printf.h"
+#include "xil_exception.h"
+#include "xscugic.h"
+#include "xintc.h"
+#include "xpseudo_asm.h"
+
+
+#include "CortexA-MPCore_PrivateTimer.h"
+
+
+#define INTC_DEVICE_ID	    XPAR_PS7_SCUGIC_0_DEVICE_ID
+#define PL_INTC_IRQ_ID           XPS_IRQ_INT_ID
+
+#define IRQ_PCORE_GEN_BASE  XPAR_IRQ_GEN_0_BASEADDR
+
+#define COMM_VAL        (*(volatile unsigned long *)(0xFFFF8000))
+
+#define COMM_TX_FLAG    (*(volatile unsigned long *)(0xFFFF9000))
+#define COMM_TX_DATA    (*(volatile unsigned long *)(0xFFFF9004))
+#define COMM_RX_FLAG    (*(volatile unsigned long *)(0xFFFF9008))
+#define COMM_RX_DATA    (*(volatile unsigned long *)(0xFFFF900C))
+
+#define TIMER_CLOCK_FREQUENCY 333000000
+#define TIMER_TICK_FREQUENCY 100
+
+/**
+ * This typedef contains configuration information for the device driver.
+ */
+typedef struct {
+	u16 DeviceId;		/**< Unique ID of device */
+	u32 BaseAddress;	/**< Base address of the device */
+} Pl_Config;
+
+
+/**
+ * The driver instance data. The user is required to allocate a
+ * variable of this type.
+ * A pointer to a variable of this type is then passed to the driver API
+ * functions.
+ */
+typedef struct {
+	Pl_Config Config;   /**< Hardware Configuration */
+	u32 IsReady;		/**< Device is initialized and ready */
+	u32 IsStarted;		/**< Device is running */
+} fpga_core;
+
+void Xil_L1DCacheFlush(void);
+extern u32 MMUTable;
+
+/**
+ * Assign the driver structures for the interrupt controller and
+ * PL Core interrupt source and the axi timer
+ */
+XScuGic m_gic;
+fpga_core m_fpga_core;
+XIntc m_axi_intc;
+
+
+
+/**
+ * Main BSP init Function
+ */
+int initialize_bsp();
+
+/**
+ * Cache Settings
+ */
+void disable_cache_for_section();
+void MyXil_DCacheFlush(void);
+void MyXil_SetTlbAttributes(u32 addr, u32 attrib);
+
+/**
+ * HW Setup
+ */
+void initialize_fpga_core();
+void initialize_timer();
+
+/**
+ * Interrupt related functions
+ */
+int prepare_irq();
+	int initialize_interrupt_controller();
+		int initialize_gic();
+		int initialize_axi_intc();
+	void enable_interrupt_controller();
+	int connect_irqs();
+		int connect_intc_irq();
+		int connect_timer_irq();
+		int connect_irq_gen_irq();
+		int connect_fit_timer_irq();
+void cleanup();
+	void disconnect_timer_irq();
+	void disconnect_fpga_irq();
+	void disconnect_fit_timer_irq();
+	void disconnect_irq_gen_irq();
+
+/**
+ * print and xil_printf redef
+ */
+void myPutchar(char c);
+void outbyte(char c);
+
+
+
+
+/**
+ * Handler prototypes
+ */
+void fit_timer_isr(void *not_valid);
+void timer_isr(void* not_valid);
+void irq_gen_isr(void* data);
+

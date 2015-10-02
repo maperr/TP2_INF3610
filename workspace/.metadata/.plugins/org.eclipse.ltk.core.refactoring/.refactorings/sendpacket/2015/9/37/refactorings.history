@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;sendpacket/src/softuart.c&apos; to &apos;sendpacket.c&apos;" description="Rename resource &apos;softuart.c&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="src/softuart.c" name="sendpacket.c" stamp="1441820283421" updateReferences="true"/>
+</session>

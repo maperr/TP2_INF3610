@@ -1,0 +1,1 @@
+softuart.d: ../softuart.c
