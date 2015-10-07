@@ -30,7 +30,7 @@
 #define 		 TASK_VERIFICATION_PRIO    42
 #define 		 TASK_STOP_PRIO            42
 #define			 TASK_STATS_PRIO		   42
-#define          TASK_COMPUTING_PRIO       42
+#define          TASK_COMPUTING_PRIO       41
 #define          TASK_FORWARDING_PRIO      42
 #define          TASK_PRINT1_PRIO          42
 #define          TASK_PRINT2_PRIO          42
@@ -55,6 +55,11 @@
 #define REJECT_HIGH3  0x600FFFFF
 #define REJECT_LOW4   0xD0000000
 #define REJECT_HIGH4  0xD00FFFFF
+
+// Packet types
+#define VIDEO_PACKET_TYPE 1
+#define AUDIO_PACKET_TYPE 2
+#define MISC_PACKET_TYPE 3
 
 
 typedef struct {

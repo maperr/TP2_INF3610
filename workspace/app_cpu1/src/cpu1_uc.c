@@ -7,11 +7,11 @@
 void irq_gen_0_isr(void* data) {
 	/* À compléter */
 	INT8U err;
-	xil_printf("Test ISR gen0 \n");
+	xil_printf("ISR gen0 \n");
 
 	// Enable ReceivePacket task
 	err = OSSemPost(sem_packet_ready);
-	err_msg("irq_gen_0_isr", err);
+	err_msg("irq_gen_0_isr - OSSemPost(sem_packet_ready)", err);
 
 	// Cleaning interrupt flags registers
 	fpga_core* coreData = (fpga_core*) data;
@@ -21,7 +21,7 @@ void irq_gen_0_isr(void* data) {
 
 void irq_gen_1_isr(void* data) {
 	/* À compléter */
-	xil_printf("Test ISR gen1 \n");
+	xil_printf("ISR gen1 \n");
 }
 void timer_isr(void* not_valid) {
 	if (private_timer_irq_triggered()) {
@@ -32,11 +32,11 @@ void timer_isr(void* not_valid) {
 
 void fit_timer_1s_isr(void *not_valid) {
 	/* À compléter */
-	xil_printf("Test ISR timer_1s \n");
+	xil_printf("ISR timer_1s \n");
 }
 void fit_timer_5s_isr(void *not_valid) {
 	/* À compléter */
-	xil_printf("Test ISR timer_5s \n");
+	xil_printf("ISR timer_5s \n");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -79,12 +79,19 @@ int create_tasks() {
 	UBYTE err;
 
 	err = OSTaskCreate(TaskReceivePacket, NULL, &TaskReceiveStk[TASK_STK_SIZE-1], TASK_RECEIVE_PRIO);
-	err_msg("create_tasks", err);
+	err_msg("create_tasks - OSTaskCreate(TaskReceivePacket)", err);
+
+	err = OSTaskCreate(TaskComputing, NULL, &TaskComputeStk[TASK_STK_SIZE - 1], TASK_COMPUTING_PRIO);
+	err_msg("create_tasks - OSTaskCreate(TaskComputing)", err);
     return 0;
 }
 
 int create_events() {
 	/*CREATION DES FILES*/
+	inputQ = OSQCreate(&inputMsg[0], 16);
+	lowQ = OSQCreate(&lowMsg[0], 4);
+	mediumQ = OSQCreate(&mediumMsg[0], 4);
+	highQ = OSQCreate(&highMsg[0], 4);
 
 	/*CREATION DES MAILBOXES*/
 
@@ -144,14 +151,16 @@ void TaskReceivePacket(void *data) {
     int k;
     INT8U err;
 
-    Packet *packet;
+	// Initialize a packet that will be fill
+    Packet* packet;
+	packet = (Packet*) malloc(sizeof(Packet));
 
     for (;;) {
     	OSSemPend(sem_packet_ready, 0, &err);
-    	err_msg("TaskReceivePacket", err);
+    	err_msg("TaskReceivePacket - OSSemPend(sem_packet_ready)", err);
     	/* À compléter : Réception des paquets de Linux */
     	uint32_t *ll;
-		ll = (uint32_t *) (&packet);
+		ll = (uint32_t *) (packet);
 
 		for(k = 0; k < 16; k++)
 		{
@@ -169,6 +178,8 @@ void TaskReceivePacket(void *data) {
 		xil_printf("    ** crc : %x \n", packet->crc);
 
 		/* À compléter: Transmission des paquets dans l'inputQueue */
+		err = OSQPost(inputQ, packet);
+		err_msg("TaskReceivePacket - OSQPost(inputQ)", err);
     }
 }
 
@@ -208,10 +219,42 @@ void TaskStop(void *data) {
  *********************************************************************************************************
  */
 void TaskComputing(void *pdata) {
-    INT8U err;
-    Packet *packet = NULL;
-    while(1){
-    	/* À compléter */
+	INT8U err;
+	Packet* packet = NULL;
+	while (1) {
+		// Unqueue a packet form the queue
+		packet = OSQPend(inputQ, 0, &err);
+		err_msg("TaskComputing - OSQPend(inputQ)", err);
+
+		// Validate the source and reject unknown packet
+		if (packet->src >= REJECT_LOW1 && packet->src <= REJECT_HIGH1 ||
+			packet->src >= REJECT_LOW2 && packet->src <= REJECT_HIGH2 ||
+			packet->src >= REJECT_LOW3 && packet->src <= REJECT_HIGH3 ||
+			packet->src >= REJECT_LOW4 && packet->src <= REJECT_HIGH4  )
+		{
+			nbPacketSourceRejete++;
+			free(packet);
+			packet = NULL;
+			continue;
+		}
+
+		// TODO: Reject corrupt packet
+		checksum = computeCRC(packet, 16);
+		/*if(corrupted)
+			free packet and continue*/
+
+		// Transfer to the right type queue
+		switch (packet->type):
+		case(VIDEO_PACKET_TYPE)
+			// Do some stuff
+			break;
+
+		case(AUDIO_PACKET_TYPE)
+			// Do some stuff
+			break;
+
+		case()
+
     }
 }
 
