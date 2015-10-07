@@ -239,23 +239,30 @@ void TaskComputing(void *pdata) {
 		}
 
 		// TODO: Reject corrupt packet
-		checksum = computeCRC(packet, 16);
+		//checksum = computeCRC(packet, 16);
 		/*if(corrupted)
-			free packet and continue*/
+		free packet and continue*/
 
 		// Transfer to the right type queue
-		switch (packet->type):
-		case(VIDEO_PACKET_TYPE)
-			// Do some stuff
+		switch (packet->type)
+		{
+		case(VIDEO_PACKET_TYPE) :
+			// TODO: some stuff
 			break;
 
-		case(AUDIO_PACKET_TYPE)
-			// Do some stuff
+		case(AUDIO_PACKET_TYPE) :
+			// TODO: some stuff
 			break;
 
-		case()
+		case(MISC_PACKET_TYPE) :
+			// TODO: some stuff
+			break;
 
-    }
+		default:
+			// TODO: free packet and continue (error case)
+			break;
+		}
+	}
 }
 
 /*
