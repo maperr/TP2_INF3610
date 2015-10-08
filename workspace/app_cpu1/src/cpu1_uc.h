@@ -26,12 +26,12 @@
  *                TASK PRIOS
  **************************************************/
 
-#define          TASK_RECEIVE_PRIO         42
+#define          TASK_RECEIVE_PRIO         40
 #define 		 TASK_VERIFICATION_PRIO    42
 #define 		 TASK_STOP_PRIO            42
 #define			 TASK_STATS_PRIO		   42
-#define          TASK_COMPUTING_PRIO       41
-#define          TASK_FORWARDING_PRIO      42
+#define          TASK_COMPUTING_PRIO       20
+#define          TASK_FORWARDING_PRIO      10
 #define          TASK_PRINT1_PRIO          42
 #define          TASK_PRINT2_PRIO          42
 #define          TASK_PRINT3_PRIO          42
@@ -108,6 +108,7 @@ void* highMsg[4];
 
 /* À compléter */
 OS_EVENT* sem_packet_ready;
+OS_EVENT* sem_packet_computed;
 
 /*DECLARATION DES TACHES*/
 /* ************************************************
@@ -152,4 +153,5 @@ void TaskStats(void *pdata);
 void create_application();
 int create_tasks();
 int create_events();
+unsigned char post_to_verif(Packet* packet, INT8U status);
 void err_msg(char* ,INT8U);
