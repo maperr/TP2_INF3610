@@ -7,15 +7,14 @@
 void irq_gen_0_isr(void* data) {
 	/* À compléter */
 	INT8U err;
+
 	xil_printf("ISR gen0 \n");
 
 	// Enable ReceivePacket task
 	err = OSSemPost(sem_packet_ready);
 	err_msg("irq_gen_0_isr - OSSemPost(sem_packet_ready)", err);
 
-	// Cleaning interrupt flags registers
-	fpga_core* coreData = (fpga_core*) data;
-	Xil_Out32(coreData->Config.BaseAddress, 0);
+	Xil_Out32(m_irq_gen_0.Config.BaseAddress, 0);
 	XIntc_Acknowledge(&m_axi_intc, 1);
 }
 
@@ -163,6 +162,9 @@ void TaskReceivePacket(void *data) {
     for (;;) {
     	packet = (Packet*) malloc(sizeof(Packet));
     	OSSemPend(sem_packet_ready, 0, &err);
+    	OSSemPend(sem_packet_ready, 0, &err);		// for some reason, the interruption IRQ_GEN0 is called 2 times
+    												// so we need to pend the sem 2 times if we do not want to receive
+    												// a corrupted packet, and indefinitely loop because the flag is not reset.
     	err_msg("TaskReceivePacket - OSSemPend(sem_packet_ready)", err);
     	/* À compléter : Réception des paquets de Linux */
     	uint32_t *ll;
@@ -176,7 +178,7 @@ void TaskReceivePacket(void *data) {
 			COMM_RX_FLAG = 0;
 		}
 
-		xil_printf("RECEIVE : ********Reception du Paquet # %d ******** \n", nbPacketSent++);
+		//xil_printf("RECIEVE : ********Traitement du Paquet # %d ******** \n", compteur++);
 		xil_printf("ADD %x \n", packet);
 		xil_printf("    ** src : %x \n", packet->src);
 		xil_printf("    ** dst : %x \n", packet->dst);
@@ -256,10 +258,9 @@ void TaskComputing(void *pdata) {
 		}
 
 		// Validate checksum and delete corrupted packet
-		unsigned int checksum = computeCRC(packet, 64);
-		if (checksum != 0)
+		if (computeCRC(packet, 64) != 0)
 		{
-			xil_printf("PacketChecksumCorrupted - ChecksumValue: %x \n", checksum);
+			xil_printf("PacketChecksumCorrupted \n");
 			free(packet);
 			packet = NULL;
 			continue;
@@ -327,29 +328,26 @@ void TaskForwarding(void *pdata) {
     	OSSemPend(sem_packet_computed, 0, &err);
     	err_msg("TaskForwarding - OSSemPend(sem_packet_computed)", err);
     	xil_printf("Packet forwarding packet: %d \n", compteur++);
-    	OSQAccept(highQ, &err);
-    	if(err == 0)
+    	packet = OSQAccept(highQ, &err);
+    	if(err == OS_ERR_NONE)	// if highQ is not empty
     	{
     		// TODO: Forward...
-    		packet = OSQPend(highQ, 0, &err);
     		xil_printf("VideoPacketForwarded \n");
     	}
     	else if(err == OS_ERR_Q_EMPTY)
     	{
-    		OSQAccept(mediumQ, &err);
-			if(err == 0)
+    		packet = OSQAccept(mediumQ, &err);
+			if(err == OS_ERR_NONE)		// if mediumQ is not empty
 			{
 				// TODO: Forward...
 				xil_printf("AudioPacketForwarded \n");
-				packet = OSQPend(mediumQ, 0, &err);
 			}
 			else if(err == OS_ERR_Q_EMPTY)
 			{
-				OSQAccept(lowQ, &err);
-				if(err == 0)
+				packet = OSQAccept(lowQ, &err);
+				if(err == OS_ERR_NONE)		// if lowQ is not empty
 				{
 					// TODO: Forward...
-					packet = OSQPend(lowQ, 0, &err);
 					xil_printf("MiscPacketForwarded \n");
 				}
 				else if(err == OS_ERR_Q_EMPTY)
@@ -409,10 +407,10 @@ void err_msg(char* entete, INT8U err)
 
 unsigned char post_to_verif(Packet* packet, INT8U status)
 {
-	if(status == OS_ERR_Q_FULL)
+	if(status != OS_ERR_NONE)
 	{
 		status = OSQPost(verifQ, packet);
-		if(status == OS_ERR_Q_FULL)
+		if(status != OS_ERR_NONE)
 		{
 			xil_printf("No more place in verification queue \n");
 			free(packet);
@@ -426,3 +424,7 @@ unsigned char post_to_verif(Packet* packet, INT8U status)
 		return 0;
 }
 
+void forward(Packet* p)
+{
+	//if(p->dst == INT1_LOW)
+}

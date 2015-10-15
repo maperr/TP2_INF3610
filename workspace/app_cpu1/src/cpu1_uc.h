@@ -26,12 +26,12 @@
  *                TASK PRIOS
  **************************************************/
 
-#define          TASK_RECEIVE_PRIO         40
+#define          TASK_RECEIVE_PRIO         37
 #define 		 TASK_VERIFICATION_PRIO    42
 #define 		 TASK_STOP_PRIO            42
 #define			 TASK_STATS_PRIO		   42
-#define          TASK_COMPUTING_PRIO       20
-#define          TASK_FORWARDING_PRIO      10
+#define          TASK_COMPUTING_PRIO       38
+#define          TASK_FORWARDING_PRIO      39
 #define          TASK_PRINT1_PRIO          42
 #define          TASK_PRINT2_PRIO          42
 #define          TASK_PRINT3_PRIO          42
@@ -45,6 +45,8 @@
 #define INT2_HIGH     0x7FFFFFFF
 #define INT3_LOW      0x80000000
 #define INT3_HIGH     0xBFFFFFFF
+#define INT4_LOW	  0xC0000000
+#define INT4_HIGH     0xFFFFFFFF
 
 // Reject source info.
 #define REJECT_LOW1   0x10000000
@@ -57,9 +59,9 @@
 #define REJECT_HIGH4  0xD00FFFFF
 
 // Packet types
-#define VIDEO_PACKET_TYPE 1
-#define AUDIO_PACKET_TYPE 2
-#define MISC_PACKET_TYPE 3
+#define VIDEO_PACKET_TYPE 0
+#define AUDIO_PACKET_TYPE 1
+#define MISC_PACKET_TYPE 2
 
 
 typedef struct {
@@ -153,5 +155,6 @@ void TaskStats(void *pdata);
 void create_application();
 int create_tasks();
 int create_events();
-unsigned char post_to_verif(Packet* packet, INT8U status);
+unsigned char post_to_verif(Packet* p, INT8U status);
+void forward(Packet* p);
 void err_msg(char* ,INT8U);
