@@ -66,11 +66,11 @@ void create_application() {
 
 	error = create_tasks();
 	if (error != 0)
-		xil_printf("Error %d while creating tasks\n", error);
+		xil_printf("Error %d while creating tasks \n", error);
 
 	error = create_events();
 	if (error != 0)
-		xil_printf("Error %d while creating events\n", error);
+		xil_printf("Error %d while creating events \n", error);
 }
 
 int create_tasks() {
@@ -86,6 +86,15 @@ int create_tasks() {
 	err = OSTaskCreate(TaskForwarding, NULL, &TaskForwardingStk[TASK_STK_SIZE - 1], TASK_FORWARDING_PRIO);
 	err_msg("create_tasks - OSTaskCreate(TaskComputing)", err);
 
+	err = OSTaskCreate(TaskPrint, &print_param1, &TaskPrint1Stk[TASK_STK_SIZE - 1], TASK_PRINT1_PRIO);
+	err_msg("create_tasks - OSTaskCreate(TaskPrint1)", err);
+
+	err = OSTaskCreate(TaskPrint, &print_param2, &TaskPrint2Stk[TASK_STK_SIZE - 1], TASK_PRINT2_PRIO);
+	err_msg("create_tasks - OSTaskCreate(TaskPrint2)", err);
+
+	err = OSTaskCreate(TaskPrint, &print_param3, &TaskPrint3Stk[TASK_STK_SIZE - 1], TASK_PRINT3_PRIO);
+	err_msg("create_tasks - OSTaskCreate(TaskPrint3)", err);
+
     return 0;
 }
 
@@ -98,13 +107,28 @@ int create_events() {
 	verifQ = OSQCreate(&verifMsg[0], 10);
 
 	/*CREATION DES MAILBOXES*/
-
+	Mbox1 = OSMboxCreate(NULL);
+	Mbox2 = OSMboxCreate(NULL);
+	Mbox3 = OSMboxCreate(NULL);
 
 	/*ALLOCATION ET DEFINITIONS DES STRUCTURES PRINT_PARAM*/
+	print_param1.Mbox = Mbox1;
+	print_param1.interfaceID = 1;
+	print_param2.Mbox = Mbox2;
+	print_param2.interfaceID = 2;
+	print_param3.Mbox = Mbox3;
+	print_param3.interfaceID = 3;
 
 	/*CREATION DES SEMAPHORES*/
 	sem_packet_ready = OSSemCreate(0);
 	sem_packet_computed = OSSemCreate(0);
+	sem_nbPacket = OSSemCreate(1);
+	sem_nbPacketLowRejete = OSSemCreate(1);
+	sem_nbPacketMediumRejete = OSSemCreate(1);
+	sem_nbPacketHighRejete = OSSemCreate(1);
+	sem_nbPacketCRCRejete = OSSemCreate(1);
+	sem_nbPacketSourceRejete = OSSemCreate(1);
+	sem_nbPacketSent = OSSemCreate(1);
 
 	return 0;
 }
@@ -161,15 +185,21 @@ void TaskReceivePacket(void *data) {
 
     for (;;) {
     	packet = (Packet*) malloc(sizeof(Packet));
+
+    	// Wait for linux's interruption
     	OSSemPend(sem_packet_ready, 0, &err);
     	OSSemPend(sem_packet_ready, 0, &err);		// for some reason, the interruption IRQ_GEN0 is called 2 times
     												// so we need to pend the sem 2 times if we do not want to receive
     												// a corrupted packet, and indefinitely loop because the flag is not reset.
+    												// The error may come from the fact that IRQ_GEN1 is actually never
+    												// called, so might be simply a copy-paste error (LINUX side).
     	err_msg("TaskReceivePacket - OSSemPend(sem_packet_ready)", err);
+
     	/* À compléter : Réception des paquets de Linux */
     	uint32_t *ll;
 		ll = (uint32_t *) (packet);
 
+		// Building the complete packet (16 unsigned)
 		for(k = 0; k < 16; k++)
 		{
 			while(COMM_RX_FLAG == 0); //wait for Linux to produce the value
@@ -178,12 +208,7 @@ void TaskReceivePacket(void *data) {
 			COMM_RX_FLAG = 0;
 		}
 
-		//xil_printf("RECIEVE : ********Traitement du Paquet # %d ******** \n", compteur++);
-		xil_printf("ADD %x \n", packet);
-		xil_printf("    ** src : %x \n", packet->src);
-		xil_printf("    ** dst : %x \n", packet->dst);
-		xil_printf("    ** type : %d \n", packet->type);
-		xil_printf("    ** crc : %x \n", packet->crc);
+		xil_printf("TaskReceivePacket - Packet RECIEVED - Type: %d \n", packet->type);	// debug output
 
 		/* À compléter: Transmission des paquets dans l'inputQueue */
 		err = OSQPost(inputQ, packet);
@@ -229,38 +254,77 @@ void TaskStop(void *data) {
 void TaskComputing(void *pdata) {
 	INT8U err;
 	Packet* packet = NULL;
-	int compteur = 0;
 	while (1) {
-		// Unqueue a packet form the queue
+		// Unqueue a packet form the queue (wait till a packet is queued)
 		packet = OSQPend(inputQ, 0, &err);
-
-		// Debug output...
-		xil_printf("COMPUTE : ********Traitement du Paquet # %d ******** \n", compteur++);
-		xil_printf("ADD %x \n", packet);
-		xil_printf("    ** src : %x \n", packet->src);
-		xil_printf("    ** dst : %x \n", packet->dst);
-		xil_printf("    ** type : %d \n", packet->type);
-		xil_printf("    ** crc : %x \n", packet->crc);
-
 		err_msg("TaskComputing - OSQPend(inputQ)", err);
 
-		// Validate the source and reject unknown packet
-		if (packet->src >= REJECT_LOW1 && packet->src <= REJECT_HIGH1 ||
-			packet->src >= REJECT_LOW2 && packet->src <= REJECT_HIGH2 ||
-			packet->src >= REJECT_LOW3 && packet->src <= REJECT_HIGH3 ||
-			packet->src >= REJECT_LOW4 && packet->src <= REJECT_HIGH4  )
+		xil_printf("TaskComputing - COMPUTING packet - Type: %d \n", packet->type);	// debug output
+
+		// Validate checksum and delete corrupted packet
+		if (computeCRC(packet, 64) != 0)
 		{
-			xil_printf("PacketSourceRejected - SourceAddress: %x \n", packet->src);
-			nbPacketSourceRejete++;
+			xil_printf("TaskComputing - PacketChecksumCorrupted \n");
+
+			// Inc nbPacketCRCRejete
+			OSSemPend(sem_nbPacketCRCRejete, 0, &err);
+			err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketCRCRejete)", err);
+			nbPacketCRCRejete++;
+			err = OSSemPost(sem_nbPacketCRCRejete);
+			err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketCRCRejete)", err);
+
+			// wont inc nbPacketLowRejete, nbPacketMediumRejete and nbPacketHighRejete because the type might be corrupted
+
 			free(packet);
 			packet = NULL;
 			continue;
 		}
 
-		// Validate checksum and delete corrupted packet
-		if (computeCRC(packet, 64) != 0)
+		// Validate the source and reject unknown packet
+		if (((packet->src >= REJECT_LOW1) && (packet->src <= REJECT_HIGH1)) ||
+			((packet->src >= REJECT_LOW2) && (packet->src <= REJECT_HIGH2)) ||
+			((packet->src >= REJECT_LOW3) && (packet->src <= REJECT_HIGH3)) ||
+			((packet->src >= REJECT_LOW4) && (packet->src <= REJECT_HIGH4))  )
 		{
-			xil_printf("PacketChecksumCorrupted \n");
+			xil_printf("TaskComputing - PacketSourceRejected - SourceAddress: %x \n", packet->src);
+
+			// 	Inc packet counter based on its priority
+			switch(packet->type)
+			{
+				case(VIDEO_PACKET_TYPE) :
+					// Inc nbPacketHighRejete
+					OSSemPend(sem_nbPacketHighRejete, 0, &err);
+					err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
+					nbPacketHighRejete++;
+					err = OSSemPost(sem_nbPacketHighRejete);
+					err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
+					break;
+
+				case(AUDIO_PACKET_TYPE) :
+					// Inc nbPacketMediumRejete
+					OSSemPend(sem_nbPacketMediumRejete, 0, &err);
+					err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketMediumRejete)", err);
+					nbPacketMediumRejete++;
+					err = OSSemPost(sem_nbPacketMediumRejete);
+					err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketMediumRejete)", err);
+					break;
+
+				case(MISC_PACKET_TYPE) :
+					// Inc nbPacketHighRejete
+					OSSemPend(sem_nbPacketHighRejete, 0, &err);
+					err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
+					nbPacketHighRejete++;
+					err = OSSemPost(sem_nbPacketHighRejete);
+					err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
+					break;
+			}
+
+			// Inc nbPacketSourceRejete
+			OSSemPend(sem_nbPacketSourceRejete, 0, &err);
+			err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketSourceRejete)", err);
+			nbPacketSourceRejete++;
+			err = OSSemPost(sem_nbPacketSourceRejete);
+			err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketSourceRejete)", err);
 			free(packet);
 			packet = NULL;
 			continue;
@@ -269,44 +333,43 @@ void TaskComputing(void *pdata) {
 		// Transfer to the right type queue
 		switch (packet->type)
 		{
-		case(VIDEO_PACKET_TYPE) :
-			xil_printf("VideoPacketTransfered \n");
-			err = OSQPost(highQ, packet);
-			if(post_to_verif(packet, err) == 0)
-			{
-				err = OSSemPost(sem_packet_computed);
-				err_msg("TaskComputing - OSSemPost(sem_packet_computed)", err);
-			}
-			break;
+			case(VIDEO_PACKET_TYPE) :
+				err = OSQPost(highQ, packet);
+				if(post_to_verif(packet, err) == 0)
+				{
+					err = OSSemPost(sem_packet_computed);
+					err_msg("TaskComputing - OSSemPost(sem_packet_computed)", err);
+				}
+				break;
 
-		case(AUDIO_PACKET_TYPE) :
-			xil_printf("AudioPacketTransfered \n");
-			err = OSQPost(mediumQ, packet);
-			if(post_to_verif(packet, err) == 0)
-			{
-				err = OSSemPost(sem_packet_computed);
-				err_msg("TaskComputing - OSSemPost(sem_packet_computed)", err);
-			}
-			break;
+			case(AUDIO_PACKET_TYPE) :
+				xil_printf("AudioPacketTransfered \n");
+				err = OSQPost(mediumQ, packet);
+				if(post_to_verif(packet, err) == 0)
+				{
+					err = OSSemPost(sem_packet_computed);
+					err_msg("TaskComputing - OSSemPost(sem_packet_computed)", err);
+				}
+				break;
 
-		case(MISC_PACKET_TYPE) :
-			xil_printf("MiscPacketTransfered \n");
-			err = OSQPost(lowQ, packet);
-			xil_printf("Post return %d \n", err);
-			if(post_to_verif(packet, err) == 0)
-			{
-				err = OSSemPost(sem_packet_computed);
-				err_msg("TaskComputing - OSSemPost(sem_packet_computed)", err);
-			}
-			break;
+			case(MISC_PACKET_TYPE) :
+				xil_printf("MiscPacketTransfered \n");
+				err = OSQPost(lowQ, packet);
+				xil_printf("Post return %d \n", err);
+				if(post_to_verif(packet, err) == 0)
+				{
+					err = OSSemPost(sem_packet_computed);
+					err_msg("TaskComputing - OSSemPost(sem_packet_computed)", err);
+				}
+				break;
 
-		default:
-			// Type is invalid
-			xil_printf("InvalidType \n");
-			free(packet);
-			packet = NULL;
-			continue;
-			break;
+			default:
+				// Type is invalid
+				xil_printf("TaskComputing - Packet COMPUTED but invalid type (packet destroyed) - Type: %d \n", packet->type);	// debug output
+				free(packet);
+				packet = NULL;
+				continue;
+				break;
 		}
 	}
 }
@@ -321,38 +384,42 @@ void TaskComputing(void *pdata) {
 void TaskForwarding(void *pdata) {
     INT8U err;
     Packet *packet = NULL;
-    int compteur = 0;
-
     while(1){
         /* À compléter */
+    	// Wait for a packet to be queued in any Q
     	OSSemPend(sem_packet_computed, 0, &err);
     	err_msg("TaskForwarding - OSSemPend(sem_packet_computed)", err);
-    	xil_printf("Packet forwarding packet: %d \n", compteur++);
+
+    	xil_printf("TaskForwarding - FORWARDING packet - Type: %d \n", packet->type);	// debug output
+
+    	// Check for video packets
     	packet = OSQAccept(highQ, &err);
     	if(err == OS_ERR_NONE)	// if highQ is not empty
     	{
-    		// TODO: Forward...
-    		xil_printf("VideoPacketForwarded \n");
+    		forward(packet);
+    		xil_printf("TaskForwarding - packet FORWARDED - Type: %d \n", packet->type);	// debug output
     	}
     	else if(err == OS_ERR_Q_EMPTY)
     	{
+    		// Check for audio packets
     		packet = OSQAccept(mediumQ, &err);
 			if(err == OS_ERR_NONE)		// if mediumQ is not empty
 			{
-				// TODO: Forward...
-				xil_printf("AudioPacketForwarded \n");
+				forward(packet);
+				xil_printf("TaskForwarding - packet FORWARDED - Type: %d \n", packet->type);	// debug output
 			}
 			else if(err == OS_ERR_Q_EMPTY)
 			{
+				// Check for misc packets
 				packet = OSQAccept(lowQ, &err);
 				if(err == OS_ERR_NONE)		// if lowQ is not empty
 				{
-					// TODO: Forward...
-					xil_printf("MiscPacketForwarded \n");
+					forward(packet);
+					xil_printf("TaskForwarding - packet FORWARDED - Type: %d \n", packet->type);	// debug output
 				}
 				else if(err == OS_ERR_Q_EMPTY)
 				{
-					xil_printf("SEMAPHORE FREE WHILE NO PACKET TO FORWARD!!!! \n");
+					xil_printf("TaskForwarding - ERROR - Semaphore freed while no packets are present in Qs \n");
 					continue;
 				}
 				else
@@ -391,8 +458,31 @@ void TaskPrint(void *data) {
     int intID = ((PRINT_PARAM*)data)->interfaceID;
     OS_EVENT* mb = ((PRINT_PARAM*)data)->Mbox;
 
+    int counter = 0;
+
     while(1){
         /* À compléter */
+
+    	// Retrieve a packet
+    	packet = OSMboxPend(mb, 0, &err);
+    	err_msg("TaskPrint - OSMboxPend(mb)", err);
+
+    	xil_printf("\n ***** uC : Print du Paquet # %d ***** \n", counter++);
+    	xil_printf("    -src : %#8X \n", packet->src);
+    	xil_printf("    -dst : %#8X \n", packet->dst);
+    	xil_printf("    -type: %d \n", packet->type);
+    	xil_printf("    -crc : %#8X \n", packet->crc);
+
+    	// Inc nbPacket
+		OSSemPend(sem_nbPacket, 0, &err);
+		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacket)", err);
+		nbPacket++;
+		err = OSSemPost(sem_nbPacket);
+		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacket)", err);
+
+    	// Freeing packet
+    	free(packet);
+    	packet = NULL;
     }
 
 }
@@ -405,6 +495,8 @@ void err_msg(char* entete, INT8U err)
 	}
 }
 
+// post a packet to verifQ if the packet could not be post in its normal Q (determined with status)
+// NOTE that if -1 is return the packet has been freed (no more space in verifQ)
 unsigned char post_to_verif(Packet* packet, INT8U status)
 {
 	if(status != OS_ERR_NONE)
@@ -412,19 +504,79 @@ unsigned char post_to_verif(Packet* packet, INT8U status)
 		status = OSQPost(verifQ, packet);
 		if(status != OS_ERR_NONE)
 		{
-			xil_printf("No more place in verification queue \n");
+			xil_printf("TaskComputing - Packet COMPUTED but verifQ full (packet destroyed) - Type: %d \n", packet->type);	// debug output
 			free(packet);
 			packet = NULL;
 			return -1;
 		}
 		else
+		{
+			xil_printf("TaskComputing - Packet COMPUTED in verifQ - Type: %d \n", packet->type);	// debug output
 			return 1;
+		}
 	}
 	else
+	{
+		xil_printf("TaskComputing - Packet COMPUTED normally - Type: %d \n", packet->type);	// debug output
 		return 0;
+	}
 }
 
 void forward(Packet* p)
 {
-	//if(p->dst == INT1_LOW)
+	INT8U err;
+
+	// Broadcast
+	if( (p->dst >= INT1_LOW) && (p->dst <= INT1_HIGH) )
+	{
+		 Packet* packet1 = packetDeepCopy(p);
+		 Packet* packet2 = packetDeepCopy(p);
+
+		err = OSMboxPost(Mbox1, packet1);
+		err_msg("TaskForwarding - OSMboxPost(Mbox1)", err);
+		err = OSMboxPost(Mbox2, packet2);
+		err_msg("TaskForwarding - OSMboxPost(Mbox2)", err);
+		err = OSMboxPost(Mbox3, p);
+		err_msg("TaskForwarding - OSMboxPost(Mbox3)", err);
+		return;
+	}
+
+	// INT3
+	if((p->dst >= INT2_LOW) && (p->dst <= INT2_HIGH))
+	{
+		err = OSMboxPost(Mbox3, p);
+		err_msg("TaskForwarding - OSMboxPost(Mbox3)", err);
+		return;
+	}
+
+	// INT2
+	if((p->dst >= INT3_LOW) && (p->dst <= INT3_HIGH))
+	{
+		err = OSMboxPost(Mbox2, p);
+		err_msg("TaskForwarding - OSMboxPost(Mbox2)", err);
+		return;
+	}
+
+	// INT1
+	if((p->dst >= INT4_LOW) && (p->dst <= INT4_HIGH))
+	{
+		err = OSMboxPost(Mbox1, p);
+		err_msg("TaskForwarding - OSMboxPost(Mbox1)", err);
+		return;
+	}
+}
+
+Packet* packetDeepCopy(Packet* p)
+{
+	Packet* packet = (Packet*) malloc(sizeof(Packet));
+	packet->crc = p->crc;
+	packet->src = p->src;
+	packet->dst = p->dst;
+	packet->type = p->type;
+	int i;
+	for(i = 0; i < 12; i++)
+	{
+		packet->data[i] = p->data[i];
+	}
+	return packet;
 }

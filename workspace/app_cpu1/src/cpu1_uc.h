@@ -111,6 +111,13 @@ void* highMsg[4];
 /* À compléter */
 OS_EVENT* sem_packet_ready;
 OS_EVENT* sem_packet_computed;
+OS_EVENT* sem_nbPacket;
+OS_EVENT* sem_nbPacketLowRejete;
+OS_EVENT* sem_nbPacketMediumRejete;
+OS_EVENT* sem_nbPacketHighRejete;
+OS_EVENT* sem_nbPacketCRCRejete;
+OS_EVENT* sem_nbPacketSourceRejete;
+OS_EVENT* sem_nbPacketSent;
 
 /*DECLARATION DES TACHES*/
 /* ************************************************
@@ -158,3 +165,4 @@ int create_events();
 unsigned char post_to_verif(Packet* p, INT8U status);
 void forward(Packet* p);
 void err_msg(char* ,INT8U);
+Packet* packetDeepCopy(Packet* p);
