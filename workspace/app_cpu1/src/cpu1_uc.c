@@ -31,7 +31,13 @@ void timer_isr(void* not_valid) {
 
 void fit_timer_1s_isr(void *not_valid) {
 	/* À compléter */
+	INT8U err;
+
 	xil_printf("ISR timer_1s \n");
+
+	// Enable ReceivePacket task
+	err = OSSemPost(sem_crc_count_check_task_enable);
+	err_msg("fit_timer_5s_isr - OSSemPost(sem_crc_count_check)", err);
 }
 
 void fit_timer_5s_isr(void *not_valid) {
@@ -43,10 +49,6 @@ void fit_timer_5s_isr(void *not_valid) {
 	// Enable ReceivePacket task
 	err = OSSemPost(sem_verif_signal);
 	err_msg("fit_timer_5s_isr - OSSemPost(sem_verif_signal)", err);
-
-	Xil_Out32(m_irq_gen_0.Config.BaseAddress, 0);
-	XIntc_Acknowledge(&m_axi_intc, 1);
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -106,6 +108,12 @@ int create_tasks() {
 	err = OSTaskCreate(TaskPrint, &print_param3, &TaskPrint3Stk[TASK_STK_SIZE - 1], TASK_PRINT3_PRIO);
 	err_msg("create_tasks - OSTaskCreate(TaskPrint3)", err);
 
+	err = OSTaskCreate(TaskStop, NULL, &TaskStopStk[TASK_STK_SIZE - 1], TASK_STOP_PRIO);
+	err_msg("create_tasks - OSTaskCreate(TaskStop)", err);
+
+	err = OSTaskCreate(TaskVerification, NULL, &TaskVerificationStk[TASK_STK_SIZE - 1], TASK_VERIFICATION_PRIO);
+	err_msg("create_tasks - OSTaskCreate(TaskVerification)", err);
+
     return 0;
 }
 
@@ -133,6 +141,9 @@ int create_events() {
 	/*CREATION DES SEMAPHORES*/
 	sem_packet_ready = OSSemCreate(0);
 	sem_packet_computed = OSSemCreate(0);
+	sem_verif_signal = OSSemCreate(0);
+	sem_crc_count_check_task_enable = OSSemCreate(0);
+
 	sem_nbPacket = OSSemCreate(1);
 	sem_nbPacketLowRejete = OSSemCreate(1);
 	sem_nbPacketMediumRejete = OSSemCreate(1);
@@ -234,11 +245,93 @@ void TaskReceivePacket(void *data) {
  *  -Réinjecte les paquets rejetés des files haute, medium et basse dans la inputQ
  *********************************************************************************************************
  */
+
+// The packet will be put in their correspondant Q (not in inputQ) for 2 reasons...
+// 1. These packets has already been computed there for their validity has already been confirm (src and crc)
+// 2. Because their packet has already been computed their crc is now invalid (the computeCRC won't return 0)
 void TaskVerification(void *data) {
 	INT8U err;
 	Packet *packet = NULL;
 	while (1) {
 		/* À compléter */
+
+		// Wait for LINUX's interruption
+		OSSemPend(sem_verif_signal, 0, &err);
+		err_msg("TaskVerification - OSSemPend(sem_verif_signal)", err);
+		
+		// Empty verifQ in a temp array of packets
+		Packet* tempPacketArray[10] = NULL;
+		int i = 0;
+		while (err != OS_ERR_Q_EMPTY)
+		{
+			tempPacketArray[i] = OSQAccept(verifQ, &err);
+			i++;
+		}
+
+		// Empty tempPacketArray in the right Q
+		i = 0;
+		packet = tempPacketArray[0];
+		bool isVideoQFull = false, isAudioQFull = false, isMiscQFull = false;
+		while (packet != NULL && i < 9)
+		{
+			// Push packet in videoQ if not full
+			if (!isVideoQFull && packet->type == VIDEO_PACKET_TYPE)
+			{
+				err = OSQPost(highQ, packet);
+				if (err != OS_ERR_NONE)
+				{
+					isVideoQFull = true;
+					err = OSQPost(verifQ, packet);
+					if (status != OS_ERR_NONE)
+					{
+						err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
+					}
+				}
+				tempPacketArray[i] = NULL;
+			}
+
+			// Push packet in audioQ if not full
+			else if (!isAudioQFull && packet->type == AUDIO_PACKET_TYPE())
+			{
+				err = OSQPost(mediumQ, packet);
+				if (err != OS_ERR_NONE)
+				{
+					isAudioQFull = true;
+					err = OSQPost(verifQ, packet);
+					if (status != OS_ERR_NONE)
+					{
+						err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
+					}
+				}
+				tempPacketArray[i] = NULL;
+			}
+
+			// Push packet in miscQ if not full
+			else if (!isMiscQFull && packet->type == MISC_PACKET_TYPE())
+			{
+				err = OSQPost(lowQ, packet);
+				if (err != OS_ERR_NONE)
+				{
+					isMiscQFull = true;
+					err = OSQPost(verifQ, packet);
+					if (status != OS_ERR_NONE)
+					{
+						err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
+					}
+				}
+				tempPacketArray[i] = NULL;
+			}
+
+			// If the correspondant Q is full push in verifQ
+			else
+			{
+				err = OSQPost(verifQ, packet);
+				err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
+			}
+
+			// Take a new packet
+			packet = tempPacketArray[++i];
+		}
 	}
 }
 /*
@@ -251,6 +344,48 @@ void TaskStop(void *data) {
 	INT8U err;
 	while(1) {
 		/* À compléter */
+
+		// Wait for interruption (from LINUX)
+		OSSemPend(sem_crc_count_check_task_enable, 0, &err);
+		err_msg("TaskStop - OSSemPend(sem_nbPacketCRCRejete)", err);
+
+		// If more than 15 packets were corrupted kill all
+		OSSemPend(sem_nbPacketCRCRejete, 0, &err);
+		err_msg("TaskStop - OSSemPend(sem_nbPacketCRCRejete)", err);
+		if (sem_nbPacketCRCRejete >= 15)
+		{
+			err = OSTaskDel(TASK_RECEIVE_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_RECEIVE_PRIO)", err);
+
+			err = OSTaskDel(TASK_VERIFICATION_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_VERIFICATION_PRIO)", err);
+
+			err = OSTaskDel(TASK_STATS_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_STATS_PRIO)", err);
+
+			err = OSTaskDel(TASK_COMPUTING_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_COMPUTING_PRIO)", err);
+
+			err = OSTaskDel(TASK_FORWARDING_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_FORWARDING_PRIO)", err);
+
+			err = OSTaskDel(TASK_PRINT1_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_PRINT1_PRIO)", err);
+
+			err = OSTaskDel(TASK_PRINT2_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_PRINT2_PRIO)", err);
+
+			err = OSTaskDel(TASK_PRINT3_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_PRINT3_PRIO)", err);
+
+			err = OSTaskDel(TASK_STOP_PRIO);
+			err_msg("TaskStop - OSTaskDel(TASK_STOP_PRIO)", err);
+		}
+
+		// Release sem_nbPacketCRCRejete
+		err = OSSemPost(sem_nbPacketCRCRejete);
+		err_msg("TaskComputing - OSSemPost(sem_nbPacketCRCRejete)", err);
+
 	}
 }
 
@@ -279,10 +414,10 @@ void TaskComputing(void *pdata) {
 
 			// Inc nbPacketCRCRejete
 			OSSemPend(sem_nbPacketCRCRejete, 0, &err);
-			err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketCRCRejete)", err);
+			err_msg("TaskComputing - OSSemPend(sem_nbPacketCRCRejete)", err);
 			nbPacketCRCRejete++;
 			err = OSSemPost(sem_nbPacketCRCRejete);
-			err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketCRCRejete)", err);
+			err_msg("TaskComputing - OSSemPost(sem_nbPacketCRCRejete)", err);
 
 			// wont inc nbPacketLowRejete, nbPacketMediumRejete and nbPacketHighRejete because the type might be corrupted
 

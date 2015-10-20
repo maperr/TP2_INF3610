@@ -26,15 +26,15 @@
  *                TASK PRIOS
  **************************************************/
 
-#define          TASK_RECEIVE_PRIO         37
-#define 		 TASK_VERIFICATION_PRIO    42
-#define 		 TASK_STOP_PRIO            42
-#define			 TASK_STATS_PRIO		   42
+#define          TASK_RECEIVE_PRIO         35
+#define 		 TASK_VERIFICATION_PRIO    37
+#define 		 TASK_STOP_PRIO            34
+#define			 TASK_STATS_PRIO		   36
 #define          TASK_COMPUTING_PRIO       38
-#define          TASK_FORWARDING_PRIO      39
-#define          TASK_PRINT1_PRIO          42
-#define          TASK_PRINT2_PRIO          42
-#define          TASK_PRINT3_PRIO          42
+#define          TASK_FORWARDING_PRIO      41	// making the forwarding task prior to print misc. because vidoe and 
+#define          TASK_PRINT1_PRIO          42	// audio packets must not be block in forwarding because of print misc.
+#define          TASK_PRINT2_PRIO          40
+#define          TASK_PRINT3_PRIO          39
 
 
 
@@ -114,6 +114,7 @@ void* highMsg[4];
 OS_EVENT* sem_packet_ready;
 OS_EVENT* sem_packet_computed;
 OS_EVENT* sem_verif_signal;
+OS_EVENT* sem_crc_count_check_task_enable;
 
 // Shared var. protect.
 OS_EVENT* sem_nbPacket;
