@@ -33,9 +33,20 @@ void fit_timer_1s_isr(void *not_valid) {
 	/* À compléter */
 	xil_printf("ISR timer_1s \n");
 }
+
 void fit_timer_5s_isr(void *not_valid) {
 	/* À compléter */
+	INT8U err;
+
 	xil_printf("ISR timer_5s \n");
+
+	// Enable ReceivePacket task
+	err = OSSemPost(sem_verif_signal);
+	err_msg("fit_timer_5s_isr - OSSemPost(sem_verif_signal)", err);
+
+	Xil_Out32(m_irq_gen_0.Config.BaseAddress, 0);
+	XIntc_Acknowledge(&m_axi_intc, 1);
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -288,36 +299,7 @@ void TaskComputing(void *pdata) {
 		{
 			xil_printf("TaskComputing - PacketSourceRejected - SourceAddress: %x \n", packet->src);
 
-			// 	Inc packet counter based on its priority
-			switch(packet->type)
-			{
-				case(VIDEO_PACKET_TYPE) :
-					// Inc nbPacketHighRejete
-					OSSemPend(sem_nbPacketHighRejete, 0, &err);
-					err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
-					nbPacketHighRejete++;
-					err = OSSemPost(sem_nbPacketHighRejete);
-					err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
-					break;
-
-				case(AUDIO_PACKET_TYPE) :
-					// Inc nbPacketMediumRejete
-					OSSemPend(sem_nbPacketMediumRejete, 0, &err);
-					err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketMediumRejete)", err);
-					nbPacketMediumRejete++;
-					err = OSSemPost(sem_nbPacketMediumRejete);
-					err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketMediumRejete)", err);
-					break;
-
-				case(MISC_PACKET_TYPE) :
-					// Inc nbPacketHighRejete
-					OSSemPend(sem_nbPacketHighRejete, 0, &err);
-					err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
-					nbPacketHighRejete++;
-					err = OSSemPost(sem_nbPacketHighRejete);
-					err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
-					break;
-			}
+			incRejectedPacketType(packet);
 
 			// Inc nbPacketSourceRejete
 			OSSemPend(sem_nbPacketSourceRejete, 0, &err);
@@ -325,6 +307,8 @@ void TaskComputing(void *pdata) {
 			nbPacketSourceRejete++;
 			err = OSSemPost(sem_nbPacketSourceRejete);
 			err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketSourceRejete)", err);
+
+			// Destroy packet
 			free(packet);
 			packet = NULL;
 			continue;
@@ -579,4 +563,38 @@ Packet* packetDeepCopy(Packet* p)
 		packet->data[i] = p->data[i];
 	}
 	return packet;
+}
+
+void incRejectedPacketType(Packet* packet)
+{
+	// 	Inc packet counter based on its priority
+	switch (packet->type)
+	{
+	case(VIDEO_PACKET_TYPE) :
+		// Inc nbPacketHighRejete
+		OSSemPend(sem_nbPacketHighRejete, 0, &err);
+		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
+		nbPacketHighRejete++;
+		err = OSSemPost(sem_nbPacketHighRejete);
+		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
+		break;
+
+	case(AUDIO_PACKET_TYPE) :
+		// Inc nbPacketMediumRejete
+		OSSemPend(sem_nbPacketMediumRejete, 0, &err);
+		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketMediumRejete)", err);
+		nbPacketMediumRejete++;
+		err = OSSemPost(sem_nbPacketMediumRejete);
+		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketMediumRejete)", err);
+		break;
+
+	case(MISC_PACKET_TYPE) :
+		// Inc nbPacketHighRejete
+		OSSemPend(sem_nbPacketHighRejete, 0, &err);
+		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
+		nbPacketHighRejete++;
+		err = OSSemPost(sem_nbPacketHighRejete);
+		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
+		break;
+	}
 }

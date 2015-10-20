@@ -109,8 +109,13 @@ void* highMsg[4];
  **************************************************/
 
 /* À compléter */
+
+// Event sych.
 OS_EVENT* sem_packet_ready;
 OS_EVENT* sem_packet_computed;
+OS_EVENT* sem_verif_signal;
+
+// Shared var. protect.
 OS_EVENT* sem_nbPacket;
 OS_EVENT* sem_nbPacketLowRejete;
 OS_EVENT* sem_nbPacketMediumRejete;
@@ -157,7 +162,9 @@ void TaskForwarding(void *data);
 void TaskPrint(void *data);
 void TaskStats(void *pdata);
 
-
+/* ************************************************
+*              Utility functions
+**************************************************/
 
 void create_application();
 int create_tasks();
@@ -166,3 +173,4 @@ unsigned char post_to_verif(Packet* p, INT8U status);
 void forward(Packet* p);
 void err_msg(char* ,INT8U);
 Packet* packetDeepCopy(Packet* p);
+void incRejectedPacketType(Packet* p);
