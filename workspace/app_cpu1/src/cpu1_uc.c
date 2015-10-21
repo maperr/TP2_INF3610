@@ -114,6 +114,9 @@ int create_tasks() {
 	err = OSTaskCreate(TaskVerification, NULL, &TaskVerificationStk[TASK_STK_SIZE - 1], TASK_VERIFICATION_PRIO);
 	err_msg("create_tasks - OSTaskCreate(TaskVerification)", err);
 
+	err = OSTaskCreate(TaskStats, NULL, &TaskStatsStk[TASK_STK_SIZE - 1], TASK_STATS_PRIO);
+	err_msg("create_tasks - OSTaskCreate(TaskStats)", err);
+
     return 0;
 }
 
@@ -245,11 +248,9 @@ void TaskReceivePacket(void *data) {
  *  -Réinjecte les paquets rejetés des files haute, medium et basse dans la inputQ
  *********************************************************************************************************
  */
-
-// The packet will be put in their correspondant Q (not in inputQ) for 2 reasons...
-// 1. These packets has already been computed there for their validity has already been confirm (src and crc)
-// 2. Because their packet has already been computed their crc is now invalid (the computeCRC won't return 0)
 void TaskVerification(void *data) {
+	INT8U statusVerifQ = -1;	// max of INT8U (unused value)
+	INT8U statusInputQ = -1;	// max of INT8U (unused value)
 	INT8U err;
 	Packet *packet = NULL;
 	while (1) {
@@ -259,78 +260,13 @@ void TaskVerification(void *data) {
 		OSSemPend(sem_verif_signal, 0, &err);
 		err_msg("TaskVerification - OSSemPend(sem_verif_signal)", err);
 		
-		// Empty verifQ in a temp array of packets
-		Packet* tempPacketArray[10] = NULL;
-		int i = 0;
-		while (err != OS_ERR_Q_EMPTY)
+		while(statusVerifQ == OS_ERR_NONE && statusInputQ == OS_ERR_NONE)
 		{
-			tempPacketArray[i] = OSQAccept(verifQ, &err);
-			i++;
-		}
-
-		// Empty tempPacketArray in the right Q
-		i = 0;
-		packet = tempPacketArray[0];
-		bool isVideoQFull = false, isAudioQFull = false, isMiscQFull = false;
-		while (packet != NULL && i < 9)
-		{
-			// Push packet in videoQ if not full
-			if (!isVideoQFull && packet->type == VIDEO_PACKET_TYPE)
+			packet = OSQAccept(verifQ, statusVerifQ);
+			if(packet != NULL)
 			{
-				err = OSQPost(highQ, packet);
-				if (err != OS_ERR_NONE)
-				{
-					isVideoQFull = true;
-					err = OSQPost(verifQ, packet);
-					if (status != OS_ERR_NONE)
-					{
-						err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
-					}
-				}
-				tempPacketArray[i] = NULL;
+				statusInputQ = OSQPost(inputQ, packet);
 			}
-
-			// Push packet in audioQ if not full
-			else if (!isAudioQFull && packet->type == AUDIO_PACKET_TYPE())
-			{
-				err = OSQPost(mediumQ, packet);
-				if (err != OS_ERR_NONE)
-				{
-					isAudioQFull = true;
-					err = OSQPost(verifQ, packet);
-					if (status != OS_ERR_NONE)
-					{
-						err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
-					}
-				}
-				tempPacketArray[i] = NULL;
-			}
-
-			// Push packet in miscQ if not full
-			else if (!isMiscQFull && packet->type == MISC_PACKET_TYPE())
-			{
-				err = OSQPost(lowQ, packet);
-				if (err != OS_ERR_NONE)
-				{
-					isMiscQFull = true;
-					err = OSQPost(verifQ, packet);
-					if (status != OS_ERR_NONE)
-					{
-						err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
-					}
-				}
-				tempPacketArray[i] = NULL;
-			}
-
-			// If the correspondant Q is full push in verifQ
-			else
-			{
-				err = OSQPost(verifQ, packet);
-				err_msg("TaskVerification - ERROR - OSQPost(verifQ, packet)", err);
-			}
-
-			// Take a new packet
-			packet = tempPacketArray[++i];
 		}
 	}
 }
@@ -560,6 +496,57 @@ void TaskStats(void *pdata) {
 
     while(1){
     	/* À compléter */
+
+		xil_printf("TaskStats - Printing stats... \n");
+
+    	// Printing nbPacket
+    	OSSemPend(sem_nbPacket, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_nbPacket)", err);
+		xil_printf("TaskStats - nbPacket: %d /n", nbPacket);
+		err = OSSemPost(sem_nbPacket);
+		err_msg("TaskStats - OSSemPost(sem_nbPacket)", err);
+
+		// Printing nbPacketLowRejete
+    	OSSemPend(sem_nbPacketLowRejete, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_nbPacketLowRejete)", err);
+		xil_printf("TaskStats - nbPacketLowRejete: %d /n", nbPacketLowRejete);
+		err = OSSemPost(sem_nbPacketLowRejete);
+		err_msg("TaskStats - OSSemPost(sem_nbPacketLowRejete)", err);
+
+		// Printing nbPacketMediumRejete
+    	OSSemPend(sem_nbPacketMediumRejete, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_nbPacketMediumRejete)", err);
+		xil_printf("TaskStats - nbPacketMediumRejete: %d /n", nbPacketMediumRejete);
+		err = OSSemPost(sem_nbPacketMediumRejete);
+		err_msg("TaskStats - OSSemPost(sem_nbPacketMediumRejete)", err);
+
+		// Printing nbPacketHighRejete
+    	OSSemPend(sem_nbPacketHighRejete, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_nbPacketHighRejete)", err);
+		xil_printf("TaskStats - nbPacketHighRejete: %d /n", nbPacketHighRejete);
+		err = OSSemPost(sem_nbPacketHighRejete);
+		err_msg("TaskStats - OSSemPost(sem_nbPacketHighRejete)", err);
+
+		// Printing nbPacketCRCRejete
+    	OSSemPend(sem_nbPacketCRCRejete, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_nbPacketCRCRejete)", err);
+		xil_printf("TaskStats - nbPacketCRCRejete: %d /n", nbPacketCRCRejete);
+		err = OSSemPost(sem_nbPacketCRCRejete);
+		err_msg("TaskStats - OSSemPost(sem_nbPacketCRCRejete)", err);
+
+		// Printing nbPacketSourceRejete
+    	OSSemPend(sem_nbPacketSourceRejete, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_nbPacketSourceRejete)", err);
+		xil_printf("TaskStats - nbPacketSourceRejete: %d /n", nbPacketSourceRejete);
+		err = OSSemPost(sem_nbPacketSourceRejete);
+		err_msg("TaskStats - OSSemPost(sem_nbPacketSourceRejete)", err);
+
+		// Printing nbPacketSent
+    	OSSemPend(sem_nbPacketSent, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_nbPacketSent)", err);
+		xil_printf("TaskStats - nbPacketSent: %d /n", nbPacketSent);
+    	err = OSSemPost(sem_nbPacketSent);
+    	err_msg("TaskStats - OSSemPost(sem_nbPacketSent)", err);
     }
 
 }
@@ -702,6 +689,7 @@ Packet* packetDeepCopy(Packet* p)
 
 void incRejectedPacketType(Packet* packet)
 {
+	INT8U err;
 	// 	Inc packet counter based on its priority
 	switch (packet->type)
 	{
