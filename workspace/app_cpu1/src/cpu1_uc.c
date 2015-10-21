@@ -20,7 +20,16 @@ void irq_gen_0_isr(void* data) {
 
 void irq_gen_1_isr(void* data) {
 	/* À compléter */
+	INT8U err;
+
 	xil_printf("ISR gen1 \n");
+
+	// Enable ReceivePacket task
+	err = OSSemPost(sem_enable_stats);
+	err_msg("irq_gen_1_isr - OSSemPost(sem_enable_stats)", err);
+
+	Xil_Out32(m_irq_gen_1.Config.BaseAddress, 0);
+	XIntc_Acknowledge(&m_axi_intc, 1);
 }
 void timer_isr(void* not_valid) {
 	if (private_timer_irq_triggered()) {
@@ -146,6 +155,7 @@ int create_events() {
 	sem_packet_computed = OSSemCreate(0);
 	sem_verif_signal = OSSemCreate(0);
 	sem_crc_count_check_task_enable = OSSemCreate(0);
+	sem_enable_stats = OSSemCreate(0);
 
 	sem_nbPacket = OSSemCreate(1);
 	sem_nbPacketLowRejete = OSSemCreate(1);
@@ -262,7 +272,7 @@ void TaskVerification(void *data) {
 		
 		while(statusVerifQ == OS_ERR_NONE && statusInputQ == OS_ERR_NONE)
 		{
-			packet = OSQAccept(verifQ, statusVerifQ);
+			packet = OSQAccept(verifQ, &statusVerifQ);
 			if(packet != NULL)
 			{
 				statusInputQ = OSQPost(inputQ, packet);
@@ -288,7 +298,7 @@ void TaskStop(void *data) {
 		// If more than 15 packets were corrupted kill all
 		OSSemPend(sem_nbPacketCRCRejete, 0, &err);
 		err_msg("TaskStop - OSSemPend(sem_nbPacketCRCRejete)", err);
-		if (sem_nbPacketCRCRejete >= 15)
+		if (nbPacketCRCRejete >= 15)
 		{
 			err = OSTaskDel(TASK_RECEIVE_PRIO);
 			err_msg("TaskStop - OSTaskDel(TASK_RECEIVE_PRIO)", err);
@@ -344,7 +354,7 @@ void TaskComputing(void *pdata) {
 		xil_printf("TaskComputing - COMPUTING packet - Type: %d \n", packet->type);	// debug output
 
 		// Validate checksum and delete corrupted packet
-		if (computeCRC(packet, 64) != 0)
+		if (computeCRC((unsigned short*) packet, 64) != 0)
 		{
 			xil_printf("TaskComputing - PacketChecksumCorrupted \n");
 
@@ -497,6 +507,10 @@ void TaskStats(void *pdata) {
     while(1){
     	/* À compléter */
 
+    	// Wait for LINUX's interruption
+    	OSSemPend(sem_enable_stats, 0, &err);
+    	err_msg("TaskStats - OSSemPend(sem_enable_stats)", err);
+
 		xil_printf("TaskStats - Printing stats... \n");
 
     	// Printing nbPacket
@@ -573,7 +587,7 @@ void TaskPrint(void *data) {
     	packet = OSMboxPend(mb, 0, &err);
     	err_msg("TaskPrint - OSMboxPend(mb)", err);
 
-    	xil_printf("\n ***** uC : Print du Paquet # %d ***** \n", counter++);
+    	xil_printf("\n ***** Interface # %d : Print du Paquet # %d ***** \n", intID, counter++);
     	xil_printf("    -src : %#8X \n", packet->src);
     	xil_printf("    -dst : %#8X \n", packet->dst);
     	xil_printf("    -type: %d \n", packet->type);

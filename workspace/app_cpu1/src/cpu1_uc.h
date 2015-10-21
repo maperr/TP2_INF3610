@@ -115,6 +115,7 @@ OS_EVENT* sem_packet_ready;
 OS_EVENT* sem_packet_computed;
 OS_EVENT* sem_verif_signal;
 OS_EVENT* sem_crc_count_check_task_enable;
+OS_EVENT* sem_enable_stats;
 
 // Shared var. protect.
 OS_EVENT* sem_nbPacket;
