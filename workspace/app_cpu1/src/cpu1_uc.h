@@ -31,11 +31,17 @@
 #define 		 TASK_STOP_PRIO            34
 #define			 TASK_STATS_PRIO		   36
 #define          TASK_COMPUTING_PRIO       38
-#define          TASK_FORWARDING_PRIO      41	// making the forwarding task prior to print misc. because vidoe and 
-#define          TASK_PRINT1_PRIO          42	// audio packets must not be block in forwarding because of print misc.
+#define          TASK_FORWARDING_PRIO      42
+#define          TASK_PRINT1_PRIO          41
 #define          TASK_PRINT2_PRIO          40
 #define          TASK_PRINT3_PRIO          39
 
+/* ************************************************
+ *                MUTEX PRIOS
+ **************************************************/
+
+#define			MUTEX_NBPACKET_PRIO		   32
+#define			MUTEX_COMPUTING_PRIO	   33
 
 
 // Routing info.
@@ -109,22 +115,18 @@ void* highMsg[4];
  **************************************************/
 
 /* À compléter */
-
-// Event sych.
 OS_EVENT* sem_packet_ready;
 OS_EVENT* sem_packet_computed;
 OS_EVENT* sem_verif_signal;
 OS_EVENT* sem_crc_count_check_task_enable;
 OS_EVENT* sem_enable_stats;
 
-// Shared var. protect.
-OS_EVENT* sem_nbPacket;
-OS_EVENT* sem_nbPacketLowRejete;
-OS_EVENT* sem_nbPacketMediumRejete;
-OS_EVENT* sem_nbPacketHighRejete;
-OS_EVENT* sem_nbPacketCRCRejete;
-OS_EVENT* sem_nbPacketSourceRejete;
-OS_EVENT* sem_nbPacketSent;
+/* ************************************************
+ *                  Mutex
+ **************************************************/
+
+OS_EVENT* mtx_nbPacket;
+OS_EVENT* mtx_computingValues;
 
 /*DECLARATION DES TACHES*/
 /* ************************************************
@@ -176,3 +178,5 @@ void forward(Packet* p);
 void err_msg(char* ,INT8U);
 Packet* packetDeepCopy(Packet* p);
 void incRejectedPacketType(Packet* p);
+void cleaningEverything();
+void cleanQ(OS_EVENT* q);

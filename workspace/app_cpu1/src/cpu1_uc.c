@@ -15,7 +15,7 @@ void irq_gen_0_isr(void* data) {
 	err_msg("irq_gen_0_isr - OSSemPost(sem_packet_ready)", err);
 
 	Xil_Out32(m_irq_gen_0.Config.BaseAddress, 0);
-	XIntc_Acknowledge(&m_axi_intc, 1);
+	XIntc_Acknowledge(&m_axi_intc, RECEIVE_PACKET_IRQ_ID);
 }
 
 void irq_gen_1_isr(void* data) {
@@ -29,7 +29,7 @@ void irq_gen_1_isr(void* data) {
 	err_msg("irq_gen_1_isr - OSSemPost(sem_enable_stats)", err);
 
 	Xil_Out32(m_irq_gen_1.Config.BaseAddress, 0);
-	XIntc_Acknowledge(&m_axi_intc, 1);
+	XIntc_Acknowledge(&m_axi_intc, PRINT_STATS_IRQ_ID);
 }
 void timer_isr(void* not_valid) {
 	if (private_timer_irq_triggered()) {
@@ -130,6 +130,8 @@ int create_tasks() {
 }
 
 int create_events() {
+	INT8U err;
+
 	/*CREATION DES FILES*/
 	inputQ = OSQCreate(&inputMsg[0], 16);
 	lowQ = OSQCreate(&lowMsg[0], 4);
@@ -157,13 +159,9 @@ int create_events() {
 	sem_crc_count_check_task_enable = OSSemCreate(0);
 	sem_enable_stats = OSSemCreate(0);
 
-	sem_nbPacket = OSSemCreate(1);
-	sem_nbPacketLowRejete = OSSemCreate(1);
-	sem_nbPacketMediumRejete = OSSemCreate(1);
-	sem_nbPacketHighRejete = OSSemCreate(1);
-	sem_nbPacketCRCRejete = OSSemCreate(1);
-	sem_nbPacketSourceRejete = OSSemCreate(1);
-	sem_nbPacketSent = OSSemCreate(1);
+	/* CREATION DES MUTEX*/
+	mtx_nbPacket = OSMutexCreate(MUTEX_NBPACKET_PRIO, &err);
+	mtx_computingValues = OSMutexCreate(MUTEX_COMPUTING_PRIO, &err);
 
 	return 0;
 }
@@ -223,11 +221,7 @@ void TaskReceivePacket(void *data) {
 
     	// Wait for linux's interruption
     	OSSemPend(sem_packet_ready, 0, &err);
-    	OSSemPend(sem_packet_ready, 0, &err);		// for some reason, the interruption IRQ_GEN0 is called 2 times
-    												// so we need to pend the sem 2 times if we do not want to receive
-    												// a corrupted packet, and indefinitely loop because the flag is not reset.
-    												// The error may come from the fact that IRQ_GEN1 is actually never
-    												// called, so might be simply a copy-paste error (LINUX side).
+
     	err_msg("TaskReceivePacket - OSSemPend(sem_packet_ready)", err);
 
     	/* À compléter : Réception des paquets de Linux */
@@ -259,23 +253,36 @@ void TaskReceivePacket(void *data) {
  *********************************************************************************************************
  */
 void TaskVerification(void *data) {
-	INT8U statusVerifQ = -1;	// max of INT8U (unused value)
-	INT8U statusInputQ = -1;	// max of INT8U (unused value)
+	INT8U statusVerifQ;	// max of INT8U (unused value)
+	INT8U statusInputQ;	// max of INT8U (unused value)
 	INT8U err;
 	Packet *packet = NULL;
 	while (1) {
 		/* À compléter */
-
+		statusVerifQ = OS_ERR_NONE;	// max of INT8U (unused value)
+		statusInputQ = OS_ERR_NONE;
 		// Wait for LINUX's interruption
 		OSSemPend(sem_verif_signal, 0, &err);
 		err_msg("TaskVerification - OSSemPend(sem_verif_signal)", err);
 		
+		xil_printf("TaskVerification - VERIFYING \n");	// debug output
+
+		xil_printf("TaskVerification - BadCRC count: %d \n", nbPacketCRCRejete);	// debug output
+
+		xil_printf("TaskVerification -statusVerif %d \n", statusVerifQ);	// debug output
 		while(statusVerifQ == OS_ERR_NONE && statusInputQ == OS_ERR_NONE)
 		{
 			packet = OSQAccept(verifQ, &statusVerifQ);
+			xil_printf("TaskVerification -statusVerif %d \n", statusVerifQ);	// debug output
 			if(packet != NULL)
 			{
+				xil_printf("TaskVerification - Transfering from verifQ to inputQ");	// debug output
 				statusInputQ = OSQPost(inputQ, packet);
+				if(statusInputQ != OS_ERR_NONE)
+				{
+					xil_printf("TaskVerification - inputQ full... putting the packet back in verifQ");	// debug output
+					err = OSQPost(verifQ, packet);
+				}
 			}
 		}
 	}
@@ -296,10 +303,12 @@ void TaskStop(void *data) {
 		err_msg("TaskStop - OSSemPend(sem_nbPacketCRCRejete)", err);
 
 		// If more than 15 packets were corrupted kill all
-		OSSemPend(sem_nbPacketCRCRejete, 0, &err);
-		err_msg("TaskStop - OSSemPend(sem_nbPacketCRCRejete)", err);
+		OSMutexPend(mtx_computingValues, 0, &err);
+		err_msg("TaskStop - OSMutexPend(mtx_computingValues)", err);
 		if (nbPacketCRCRejete >= 15)
 		{
+			xil_printf("TaskStop - STOPPING \n");
+
 			err = OSTaskDel(TASK_RECEIVE_PRIO);
 			err_msg("TaskStop - OSTaskDel(TASK_RECEIVE_PRIO)", err);
 
@@ -328,9 +337,14 @@ void TaskStop(void *data) {
 			err_msg("TaskStop - OSTaskDel(TASK_STOP_PRIO)", err);
 		}
 
+		else
+		{
+			xil_printf("TaskStop - Not STOPPING \n");	// debug output
+		}
+
 		// Release sem_nbPacketCRCRejete
-		err = OSSemPost(sem_nbPacketCRCRejete);
-		err_msg("TaskComputing - OSSemPost(sem_nbPacketCRCRejete)", err);
+		err = OSMutexPost(mtx_computingValues);
+		err_msg("TaskComputing - OSMutexPost(mtx_computingValues)", err);
 
 	}
 }
@@ -351,18 +365,16 @@ void TaskComputing(void *pdata) {
 		packet = OSQPend(inputQ, 0, &err);
 		err_msg("TaskComputing - OSQPend(inputQ)", err);
 
-		xil_printf("TaskComputing - COMPUTING packet - Type: %d \n", packet->type);	// debug output
-
 		// Validate checksum and delete corrupted packet
-		if (computeCRC((unsigned short*) packet, 64) != 0)
+		if (computeCRC((unsigned short*)packet, 64) != 0)
 		{
 			xil_printf("TaskComputing - PacketChecksumCorrupted \n");
 
 			// Inc nbPacketCRCRejete
-			OSSemPend(sem_nbPacketCRCRejete, 0, &err);
-			err_msg("TaskComputing - OSSemPend(sem_nbPacketCRCRejete)", err);
+			OSMutexPend(mtx_computingValues, 0, &err);
+			err_msg("TaskComputing - OSMutexPend(mtx_computingValues)", err);
 			nbPacketCRCRejete++;
-			err = OSSemPost(sem_nbPacketCRCRejete);
+			err = OSMutexPost(mtx_computingValues);
 			err_msg("TaskComputing - OSSemPost(sem_nbPacketCRCRejete)", err);
 
 			// wont inc nbPacketLowRejete, nbPacketMediumRejete and nbPacketHighRejete because the type might be corrupted
@@ -383,11 +395,11 @@ void TaskComputing(void *pdata) {
 			incRejectedPacketType(packet);
 
 			// Inc nbPacketSourceRejete
-			OSSemPend(sem_nbPacketSourceRejete, 0, &err);
-			err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketSourceRejete)", err);
+			OSMutexPend(mtx_computingValues, 0, &err);
+			err_msg("TaskComputing - OSMutexPend(mtx_computingValues)", err);
 			nbPacketSourceRejete++;
-			err = OSSemPost(sem_nbPacketSourceRejete);
-			err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketSourceRejete)", err);
+			err = OSMutexPost(mtx_computingValues);
+			err_msg("TaskComputing - OSSemPost(sem_nbPacketCRCRejete)", err);
 
 			// Destroy packet
 			free(packet);
@@ -408,7 +420,6 @@ void TaskComputing(void *pdata) {
 				break;
 
 			case(AUDIO_PACKET_TYPE) :
-				xil_printf("AudioPacketTransfered \n");
 				err = OSQPost(mediumQ, packet);
 				if(post_to_verif(packet, err) == 0)
 				{
@@ -418,9 +429,7 @@ void TaskComputing(void *pdata) {
 				break;
 
 			case(MISC_PACKET_TYPE) :
-				xil_printf("MiscPacketTransfered \n");
 				err = OSQPost(lowQ, packet);
-				xil_printf("Post return %d \n", err);
 				if(post_to_verif(packet, err) == 0)
 				{
 					err = OSSemPost(sem_packet_computed);
@@ -455,14 +464,11 @@ void TaskForwarding(void *pdata) {
     	OSSemPend(sem_packet_computed, 0, &err);
     	err_msg("TaskForwarding - OSSemPend(sem_packet_computed)", err);
 
-    	xil_printf("TaskForwarding - FORWARDING packet - Type: %d \n", packet->type);	// debug output
-
     	// Check for video packets
     	packet = OSQAccept(highQ, &err);
     	if(err == OS_ERR_NONE)	// if highQ is not empty
     	{
     		forward(packet);
-    		xil_printf("TaskForwarding - packet FORWARDED - Type: %d \n", packet->type);	// debug output
     	}
     	else if(err == OS_ERR_Q_EMPTY)
     	{
@@ -471,7 +477,6 @@ void TaskForwarding(void *pdata) {
 			if(err == OS_ERR_NONE)		// if mediumQ is not empty
 			{
 				forward(packet);
-				xil_printf("TaskForwarding - packet FORWARDED - Type: %d \n", packet->type);	// debug output
 			}
 			else if(err == OS_ERR_Q_EMPTY)
 			{
@@ -480,7 +485,6 @@ void TaskForwarding(void *pdata) {
 				if(err == OS_ERR_NONE)		// if lowQ is not empty
 				{
 					forward(packet);
-					xil_printf("TaskForwarding - packet FORWARDED - Type: %d \n", packet->type);	// debug output
 				}
 				else if(err == OS_ERR_Q_EMPTY)
 				{
@@ -514,55 +518,25 @@ void TaskStats(void *pdata) {
 		xil_printf("TaskStats - Printing stats... \n");
 
     	// Printing nbPacket
-    	OSSemPend(sem_nbPacket, 0, &err);
-    	err_msg("TaskStats - OSSemPend(sem_nbPacket)", err);
+    	OSMutexPend(mtx_nbPacket, 0, &err);
+    	err_msg("TaskStats - OSMutexPend(mtx_nbPacket)", err);
 		xil_printf("TaskStats - nbPacket: %d /n", nbPacket);
-		err = OSSemPost(sem_nbPacket);
-		err_msg("TaskStats - OSSemPost(sem_nbPacket)", err);
+		err = OSMutexPost(mtx_nbPacket);
+		err_msg("TaskStats - OSMutexPost(mtx_nbPacket)", err);
 
-		// Printing nbPacketLowRejete
-    	OSSemPend(sem_nbPacketLowRejete, 0, &err);
-    	err_msg("TaskStats - OSSemPend(sem_nbPacketLowRejete)", err);
+		// Printing other stats
+    	OSMutexPend(mtx_computingValues, 0, &err);
+    	err_msg("TaskStats - OSMutexPend(mtx_computingValues)", err);
 		xil_printf("TaskStats - nbPacketLowRejete: %d /n", nbPacketLowRejete);
-		err = OSSemPost(sem_nbPacketLowRejete);
-		err_msg("TaskStats - OSSemPost(sem_nbPacketLowRejete)", err);
-
-		// Printing nbPacketMediumRejete
-    	OSSemPend(sem_nbPacketMediumRejete, 0, &err);
-    	err_msg("TaskStats - OSSemPend(sem_nbPacketMediumRejete)", err);
 		xil_printf("TaskStats - nbPacketMediumRejete: %d /n", nbPacketMediumRejete);
-		err = OSSemPost(sem_nbPacketMediumRejete);
-		err_msg("TaskStats - OSSemPost(sem_nbPacketMediumRejete)", err);
-
-		// Printing nbPacketHighRejete
-    	OSSemPend(sem_nbPacketHighRejete, 0, &err);
-    	err_msg("TaskStats - OSSemPend(sem_nbPacketHighRejete)", err);
 		xil_printf("TaskStats - nbPacketHighRejete: %d /n", nbPacketHighRejete);
-		err = OSSemPost(sem_nbPacketHighRejete);
-		err_msg("TaskStats - OSSemPost(sem_nbPacketHighRejete)", err);
-
-		// Printing nbPacketCRCRejete
-    	OSSemPend(sem_nbPacketCRCRejete, 0, &err);
-    	err_msg("TaskStats - OSSemPend(sem_nbPacketCRCRejete)", err);
 		xil_printf("TaskStats - nbPacketCRCRejete: %d /n", nbPacketCRCRejete);
-		err = OSSemPost(sem_nbPacketCRCRejete);
-		err_msg("TaskStats - OSSemPost(sem_nbPacketCRCRejete)", err);
-
-		// Printing nbPacketSourceRejete
-    	OSSemPend(sem_nbPacketSourceRejete, 0, &err);
-    	err_msg("TaskStats - OSSemPend(sem_nbPacketSourceRejete)", err);
 		xil_printf("TaskStats - nbPacketSourceRejete: %d /n", nbPacketSourceRejete);
-		err = OSSemPost(sem_nbPacketSourceRejete);
-		err_msg("TaskStats - OSSemPost(sem_nbPacketSourceRejete)", err);
+		err = OSMutexPost(mtx_computingValues);
+		err_msg("TaskStats - OSMutexPost(mtx_computingValues)", err);
 
-		// Printing nbPacketSent
-    	OSSemPend(sem_nbPacketSent, 0, &err);
-    	err_msg("TaskStats - OSSemPend(sem_nbPacketSent)", err);
 		xil_printf("TaskStats - nbPacketSent: %d /n", nbPacketSent);
-    	err = OSSemPost(sem_nbPacketSent);
-    	err_msg("TaskStats - OSSemPost(sem_nbPacketSent)", err);
     }
-
 }
 
 
@@ -587,17 +561,16 @@ void TaskPrint(void *data) {
     	packet = OSMboxPend(mb, 0, &err);
     	err_msg("TaskPrint - OSMboxPend(mb)", err);
 
-    	xil_printf("\n ***** Interface # %d : Print du Paquet # %d ***** \n", intID, counter++);
-    	xil_printf("    -src : %#8X \n", packet->src);
-    	xil_printf("    -dst : %#8X \n", packet->dst);
-    	xil_printf("    -type: %d \n", packet->type);
-    	xil_printf("    -crc : %#8X \n", packet->crc);
+    	OSMutexPend(mtx_nbPacket, 0, &err);
+    	err_msg("TaskReceivePacket - OSSemPend(sem_nbPacket)", err);
 
-    	// Inc nbPacket
-		OSSemPend(sem_nbPacket, 0, &err);
-		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacket)", err);
-		nbPacket++;
-		err = OSSemPost(sem_nbPacket);
+    	xil_printf("\n ***** Interface # %d : Print du Paquet # %d ***** \n", intID, nbPacket++);
+    	xil_printf("    -src : %X \n", packet->src);
+    	xil_printf("    -dst : %X \n", packet->dst);
+    	xil_printf("    -type: %d \n", packet->type);
+    	xil_printf("    -crc : %X \n", packet->crc);
+
+		err = OSMutexPost(mtx_nbPacket);
 		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacket)", err);
 
     	// Freeing packet
@@ -631,13 +604,11 @@ unsigned char post_to_verif(Packet* packet, INT8U status)
 		}
 		else
 		{
-			xil_printf("TaskComputing - Packet COMPUTED in verifQ - Type: %d \n", packet->type);	// debug output
 			return 1;
 		}
 	}
 	else
 	{
-		xil_printf("TaskComputing - Packet COMPUTED normally - Type: %d \n", packet->type);	// debug output
 		return 0;
 	}
 }
@@ -645,6 +616,9 @@ unsigned char post_to_verif(Packet* packet, INT8U status)
 void forward(Packet* p)
 {
 	INT8U err;
+
+	// 2 seconds delay (emulate the physical access to table delay...)
+	OSTimeDly(TIMER_TICK_FREQUENCY * 2);
 
 	// Broadcast
 	if( (p->dst >= INT1_LOW) && (p->dst <= INT1_HIGH) )
@@ -705,33 +679,59 @@ void incRejectedPacketType(Packet* packet)
 {
 	INT8U err;
 	// 	Inc packet counter based on its priority
+	OSMutexPend(mtx_computingValues, 0, &err);
+	err_msg("TaskReceivePacket - OSMutexPend(mtx_computingValues)", err);
 	switch (packet->type)
 	{
 	case(VIDEO_PACKET_TYPE) :
-		// Inc nbPacketHighRejete
-		OSSemPend(sem_nbPacketHighRejete, 0, &err);
-		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
 		nbPacketHighRejete++;
-		err = OSSemPost(sem_nbPacketHighRejete);
-		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
 		break;
 
 	case(AUDIO_PACKET_TYPE) :
-		// Inc nbPacketMediumRejete
-		OSSemPend(sem_nbPacketMediumRejete, 0, &err);
-		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketMediumRejete)", err);
 		nbPacketMediumRejete++;
-		err = OSSemPost(sem_nbPacketMediumRejete);
-		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketMediumRejete)", err);
 		break;
 
 	case(MISC_PACKET_TYPE) :
-		// Inc nbPacketHighRejete
-		OSSemPend(sem_nbPacketHighRejete, 0, &err);
-		err_msg("TaskReceivePacket - OSSemPend(sem_nbPacketHighRejete)", err);
 		nbPacketHighRejete++;
-		err = OSSemPost(sem_nbPacketHighRejete);
-		err_msg("TaskReceivePacket - OSSemPost(sem_nbPacketHighRejete)", err);
 		break;
 	}
+	err = OSMutexPost(mtx_computingValues);
+	err_msg("TaskReceivePacket - OSMutexPost(mtx_computingValues)", err);
+}
+
+// utility function that empties all Qs and destroys their packet and destroy all semaphores and mutexes
+// Note that if a packet was in the process of being created while TaskStop start, this packet will not be destroy (small possible memory leak [the size of a packet])
+void cleaningEverything()
+{
+	INT8U err;
+
+	// Cleaning Qs
+	cleanQ(inputQ);
+	cleanQ(verifQ);
+	cleanQ(lowQ);
+	cleanQ(mediumQ);
+	cleanQ(highQ);
+
+
+}
+
+void cleanQ(OS_EVENT* q)
+{
+	Packet* packet;
+	INT8U status = OS_ERR_NONE;
+	INT8U err;
+
+	// Cleaning q
+	while(status == OS_ERR_NONE)
+	{
+		packet = OSQAccept(q, &status);
+		err_msg("TaskStop - OSQAccept(q)", err);
+		if(packet != NULL)
+		{
+			free(packet);
+			packet = NULL;
+		}
+	}
+	q = OSQDel(q, OS_DEL_ALWAYS, &err);
+	err_msg("TaskStop - OSQDel(q)", err);
 }
