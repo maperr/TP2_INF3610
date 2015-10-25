@@ -1,5 +1,11 @@
 #include "cpu1_uc.h"
 
+
+// State of the app
+bool isAppRunning = false;	// the boolean indicate if the application is running for the external resources (interrupt handlers)
+							// true = all tasks are active and the resources are available
+							// false = the states of the tasks and resources are undefined and might not be initialized
+
 ///////////////////////////////////////////////////////////////////////////////////////
 //								Routines d'interruptions
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -8,11 +14,12 @@ void irq_gen_0_isr(void* data) {
 	/* À compléter */
 	INT8U err;
 
-	xil_printf("ISR gen0 \n");
-
-	// Enable ReceivePacket task
-	err = OSSemPost(sem_packet_ready);
-	err_msg("irq_gen_0_isr - OSSemPost(sem_packet_ready)", err);
+	if(isAppRunning)
+	{
+		// Enable ReceivePacket task
+		err = OSSemPost(sem_packet_ready);
+		err_msg("irq_gen_0_isr - OSSemPost(sem_packet_ready)", err);
+	}
 
 	Xil_Out32(m_irq_gen_0.Config.BaseAddress, 0);
 	XIntc_Acknowledge(&m_axi_intc, RECEIVE_PACKET_IRQ_ID);
@@ -22,11 +29,13 @@ void irq_gen_1_isr(void* data) {
 	/* À compléter */
 	INT8U err;
 
-	xil_printf("ISR gen1 \n");
+	if(isAppRunning)
+	{
+		// Enable ReceivePacket task
+		err = OSSemPost(sem_enable_stats);
+		err_msg("irq_gen_1_isr - OSSemPost(sem_enable_stats)", err);
+	}
 
-	// Enable ReceivePacket task
-	err = OSSemPost(sem_enable_stats);
-	err_msg("irq_gen_1_isr - OSSemPost(sem_enable_stats)", err);
 
 	Xil_Out32(m_irq_gen_1.Config.BaseAddress, 0);
 	XIntc_Acknowledge(&m_axi_intc, PRINT_STATS_IRQ_ID);
@@ -42,22 +51,24 @@ void fit_timer_1s_isr(void *not_valid) {
 	/* À compléter */
 	INT8U err;
 
-	xil_printf("ISR timer_1s \n");
-
-	// Enable ReceivePacket task
-	err = OSSemPost(sem_crc_count_check_task_enable);
-	err_msg("fit_timer_5s_isr - OSSemPost(sem_crc_count_check)", err);
+	if(isAppRunning)
+	{
+		// Enable ReceivePacket task
+		err = OSSemPost(sem_crc_count_check_task_enable);
+		err_msg("fit_timer_5s_isr - OSSemPost(sem_crc_count_check)", err);
+	}
 }
 
 void fit_timer_5s_isr(void *not_valid) {
 	/* À compléter */
 	INT8U err;
 
-	xil_printf("ISR timer_5s \n");
-
-	// Enable ReceivePacket task
-	err = OSSemPost(sem_verif_signal);
-	err_msg("fit_timer_5s_isr - OSSemPost(sem_verif_signal)", err);
+	if(isAppRunning)
+	{
+		// Enable ReceivePacket task
+		err = OSSemPost(sem_verif_signal);
+		err_msg("fit_timer_5s_isr - OSSemPost(sem_verif_signal)", err);
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -93,6 +104,8 @@ void create_application() {
 	error = create_events();
 	if (error != 0)
 		xil_printf("Error %d while creating events \n", error);
+
+	isAppRunning = true;
 }
 
 int create_tasks() {
@@ -237,7 +250,7 @@ void TaskReceivePacket(void *data) {
 			COMM_RX_FLAG = 0;
 		}
 
-		xil_printf("TaskReceivePacket - Packet RECIEVED - Type: %d \n", packet->type);	// debug output
+		xil_printf("TaskReceivePacket - Packet RECIEVED \n");	// debug output
 
 		/* À compléter: Transmission des paquets dans l'inputQueue */
 		err = OSQPost(inputQ, packet);
@@ -264,23 +277,15 @@ void TaskVerification(void *data) {
 		// Wait for LINUX's interruption
 		OSSemPend(sem_verif_signal, 0, &err);
 		err_msg("TaskVerification - OSSemPend(sem_verif_signal)", err);
-		
-		xil_printf("TaskVerification - VERIFYING \n");	// debug output
 
-		xil_printf("TaskVerification - BadCRC count: %d \n", nbPacketCRCRejete);	// debug output
-
-		xil_printf("TaskVerification -statusVerif %d \n", statusVerifQ);	// debug output
 		while(statusVerifQ == OS_ERR_NONE && statusInputQ == OS_ERR_NONE)
 		{
 			packet = OSQAccept(verifQ, &statusVerifQ);
-			xil_printf("TaskVerification -statusVerif %d \n", statusVerifQ);	// debug output
 			if(packet != NULL)
 			{
-				xil_printf("TaskVerification - Transfering from verifQ to inputQ");	// debug output
 				statusInputQ = OSQPost(inputQ, packet);
 				if(statusInputQ != OS_ERR_NONE)
 				{
-					xil_printf("TaskVerification - inputQ full... putting the packet back in verifQ");	// debug output
 					err = OSQPost(verifQ, packet);
 				}
 			}
@@ -309,6 +314,8 @@ void TaskStop(void *data) {
 		{
 			xil_printf("TaskStop - STOPPING \n");
 
+			isAppRunning = false;
+
 			err = OSTaskDel(TASK_RECEIVE_PRIO);
 			err_msg("TaskStop - OSTaskDel(TASK_RECEIVE_PRIO)", err);
 
@@ -333,13 +340,13 @@ void TaskStop(void *data) {
 			err = OSTaskDel(TASK_PRINT3_PRIO);
 			err_msg("TaskStop - OSTaskDel(TASK_PRINT3_PRIO)", err);
 
+
+			// Clean all memory
+			cleaningEverything();
+
+			// Delete current task...
 			err = OSTaskDel(TASK_STOP_PRIO);
 			err_msg("TaskStop - OSTaskDel(TASK_STOP_PRIO)", err);
-		}
-
-		else
-		{
-			xil_printf("TaskStop - Not STOPPING \n");	// debug output
 		}
 
 		// Release sem_nbPacketCRCRejete
@@ -552,8 +559,6 @@ void TaskPrint(void *data) {
     int intID = ((PRINT_PARAM*)data)->interfaceID;
     OS_EVENT* mb = ((PRINT_PARAM*)data)->Mbox;
 
-    int counter = 0;
-
     while(1){
         /* À compléter */
 
@@ -712,14 +717,28 @@ void cleaningEverything()
 	cleanQ(mediumQ);
 	cleanQ(highQ);
 
+	// Cleaning semaphores
+	sem_packet_ready = OSSemDel(sem_packet_ready, OS_DEL_ALWAYS, &err);
+	sem_packet_computed = OSSemDel(sem_packet_computed, OS_DEL_ALWAYS, &err);
+	sem_verif_signal = OSSemDel(sem_verif_signal, OS_DEL_ALWAYS, &err);
+	sem_crc_count_check_task_enable = OSSemDel(sem_crc_count_check_task_enable, OS_DEL_ALWAYS, &err);
+	sem_enable_stats = OSSemDel(sem_enable_stats, OS_DEL_ALWAYS, &err);
 
+	// Cleaning mutex
+	mtx_nbPacket = OSMutexDel(mtx_nbPacket, OS_DEL_ALWAYS, &err);
+	mtx_computingValues = OSMutexDel(mtx_computingValues, OS_DEL_ALWAYS, &err);
+
+	// Cleaning MailBox
+	cleanMailBox(Mbox1);
+	cleanMailBox(Mbox2);
+	cleanMailBox(Mbox3);
 }
 
 void cleanQ(OS_EVENT* q)
 {
 	Packet* packet;
 	INT8U status = OS_ERR_NONE;
-	INT8U err;
+	INT8U err = 0;
 
 	// Cleaning q
 	while(status == OS_ERR_NONE)
@@ -732,6 +751,26 @@ void cleanQ(OS_EVENT* q)
 			packet = NULL;
 		}
 	}
+
+	// Deleting the Q
 	q = OSQDel(q, OS_DEL_ALWAYS, &err);
 	err_msg("TaskStop - OSQDel(q)", err);
+}
+
+void cleanMailBox(OS_EVENT* m)
+{
+	Packet* packet = NULL;
+	INT8U err;
+
+	// Empty the Mailbox if it is not already
+	packet = OSMboxAccept(m);
+	if (packet != NULL)
+	{
+		free(packet);
+		packet = NULL;
+	}
+
+	// Delete Mailbox
+	m = OSMboxDel(m, OS_DEL_ALWAYS, &err);
+	err_msg("TaskStop - OSMboxDel(m)", err);
 }

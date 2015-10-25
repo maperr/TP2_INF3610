@@ -152,7 +152,6 @@ int nbPacketCRCRejete = 0; // Nb de packets rejetes pour mauvais crc
 int nbPacketSourceRejete = 0; // Nb de packets rejetes pour mauvaise source
 int nbPacketSent = 0;
 
-
 /* ************************************************
  *              TASK PROTOTYPES
  **************************************************/
@@ -180,3 +179,4 @@ Packet* packetDeepCopy(Packet* p);
 void incRejectedPacketType(Packet* p);
 void cleaningEverything();
 void cleanQ(OS_EVENT* q);
+void cleanMailBox(OS_EVENT* m);
